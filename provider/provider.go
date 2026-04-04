@@ -1,9 +1,11 @@
-package scanner
+// Package provider defines the extension point for CI/CD file formats.
+// Implement the Provider interface to add support for a new provider
+// without modifying any existing code.
+package provider
 
-// Provider is the extension point for CI/CD file formats.
-// Implement this interface to add support for a new provider.
+// Provider is the interface that every CI/CD provider must implement.
 type Provider interface {
-	// Name returns a human-readable label used in log output.
+	// Name returns a human-readable label used in log output (e.g. "GitHub Actions").
 	Name() string
 
 	// IsMatch reports whether the given slash-separated path relative to the

@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"pintosha/provider"
 )
 
 // Run is the main entrypoint: scans the project at cfg.Path and pins all refs.
 func Run(cfg Config) error {
-	providers := []Provider{
+	providers := []provider.Provider{
 		newGitHubResolver(cfg.GitHubToken),
 		newGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
 	}
@@ -46,7 +48,7 @@ func Run(cfg Config) error {
 }
 
 // findWorkflowFiles returns all CI files matching any registered provider.
-func findWorkflowFiles(root string, providers []Provider) ([]string, error) {
+func findWorkflowFiles(root string, providers []provider.Provider) ([]string, error) {
 	var files []string
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -78,11 +80,11 @@ func findWorkflowFiles(root string, providers []Provider) ([]string, error) {
 }
 
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
-func processFile(path, root string, providers []Provider, dryRun, pinActions, pinImages bool) (bool, error) {
+func processFile(path, root string, providers []provider.Provider, dryRun, pinActions, pinImages bool) (bool, error) {
 	rel, _ := filepath.Rel(root, path)
 	slashRel := filepath.ToSlash(rel)
 
-	var matched Provider
+	var matched provider.Provider
 	for _, p := range providers {
 		if p.IsMatch(slashRel) {
 			matched = p
