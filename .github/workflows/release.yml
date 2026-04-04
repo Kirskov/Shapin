@@ -22,7 +22,8 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME}
           COMMIT=$(git rev-parse --short HEAD)
-          LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT}"
+          DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M')
+          LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.Date=${DATE}"
           GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-amd64   .
           GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-arm64   .
           GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-amd64  .

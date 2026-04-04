@@ -8,10 +8,11 @@ import (
 	"pintosha/scanner"
 )
 
-// Version and Commit are set at build time via ldflags.
+// Version, Commit and Date are set at build time via ldflags.
 var (
 	Version = "dev"
 	Commit  = "unknown"
+	Date    = "unknown"
 )
 
 func main() {
@@ -27,7 +28,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("%s (commit: %s)\n", Version, Commit)
+		fmt.Printf("%s (commit: %s, date: %s)\n", Version, Commit, Date)
 		return
 	}
 
