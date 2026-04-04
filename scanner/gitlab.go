@@ -13,6 +13,9 @@ import (
 // `- component: gitlab.com/group/project/component@tag`
 var gitlabComponentRegex = regexp.MustCompile(`(component:\s+)([a-zA-Z0-9_.\-/]+)@([^\s#]+)`)
 
+// gitlabPinnedRegex matches already-pinned component refs: `component: path@sha # tag`
+var gitlabPinnedRegex = regexp.MustCompile(`component:\s+([a-zA-Z0-9_.\-/]+)@([0-9a-f]{40})\s+#\s+(\S+)`)
+
 type gitlabResolver struct {
 	host   string
 	token  string
@@ -53,6 +56,10 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 	result := content
 	if pinImages {
 		result = r.docker.resolveImages(content)
+	}
+
+	if pinActions {
+		r.warnIfDrifted(content)
 	}
 
 	if !pinActions {
@@ -97,6 +104,22 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 	})
 
 	return result, resolveErr
+}
+
+// warnIfDrifted checks already-pinned component refs and warns if the SHA has
+// changed. The file is never modified — the user must fix it manually.
+func (r *gitlabResolver) warnIfDrifted(content string) {
+	for _, parts := range gitlabPinnedRegex.FindAllStringSubmatch(content, -1) {
+		component, pinnedSHA, tag := parts[1], parts[2], parts[3]
+		currentSHA, err := r.fetchComponentSHA(component, tag)
+		if err != nil {
+			continue
+		}
+		if currentSHA != pinnedSHA {
+			fmt.Printf("%s%sWARNING: component %s@%s has drifted — ref was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
+				colorBold, colorYellow, component, tag, colorReset, pinnedSHA, currentSHA)
+		}
+	}
 }
 
 // fetchComponentSHA resolves a GitLab CI component ref to a commit SHA.

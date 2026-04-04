@@ -15,6 +15,9 @@ const githubJSONAccept = "application/vnd.github+json"
 // and captures: full match, owner/repo[/subdir], ref
 var githubActionRegex = regexp.MustCompile(`(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([^\s#]+)`)
 
+// githubPinnedRegex matches already-pinned refs: `uses: action@sha # tag`
+var githubPinnedRegex = regexp.MustCompile(`uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([0-9a-f]{40})\s+#\s+(\S+)`)
+
 type githubResolver struct {
 	token  string
 	client *http.Client
@@ -46,57 +49,78 @@ func (r *githubResolver) IsMatch(relPath string) bool {
 
 // Resolve replaces `uses: action@tag` and/or `image: name:tag` with pinned SHAs.
 func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
-	var resolveErr error
-
 	if pinImages {
 		content = r.docker.resolveImages(content)
 	}
-
+	if pinActions {
+		r.warnIfDrifted(content)
+	}
 	if !pinActions {
 		return content, nil
 	}
+	return r.pinActions(content)
+}
 
+// warnIfDrifted scans for already-pinned refs and warns if the SHA no longer
+// matches the tag. The file is never modified — the user must fix it manually.
+func (r *githubResolver) warnIfDrifted(content string) {
+	for _, parts := range githubPinnedRegex.FindAllStringSubmatch(content, -1) {
+		action, pinnedSHA, tag := parts[1], parts[2], parts[3]
+		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
+		currentSHA, err := r.fetchSHA(repoPath, tag)
+		if err != nil {
+			continue // best-effort, skip on error
+		}
+		if currentSHA != pinnedSHA {
+			fmt.Printf("%s%sWARNING: %s@%s has drifted — tag was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
+				colorBold, colorYellow, action, tag, colorReset, pinnedSHA, currentSHA)
+		}
+	}
+}
+
+// pinActions pins floating `uses: action@tag` refs to their SHAs.
+func (r *githubResolver) pinActions(content string) (string, error) {
+	var resolveErr error
 	result := githubActionRegex.ReplaceAllStringFunc(content, func(match string) string {
 		if resolveErr != nil {
 			return match
 		}
-
 		parts := githubActionRegex.FindStringSubmatch(match)
 		if len(parts) < 4 {
 			return match
 		}
-		prefix := parts[1] // "uses: "
-		action := parts[2] // "owner/repo" or "owner/repo/subdir"
-		ref := parts[3]    // "v2" or "main" or already a sha
-
-		// Already a SHA (40 hex chars) — skip
+		prefix, action, ref := parts[1], parts[2], parts[3]
 		if isSHA(ref) {
 			return match
 		}
-
-		// Strip subpath to get owner/repo
 		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
-		cacheKey := repoPath + "@" + ref
-
-		r.mu.Lock()
-		sha, ok := r.cache[cacheKey]
-		r.mu.Unlock()
-		if !ok {
-			var err error
-			sha, err = r.fetchSHA(repoPath, ref)
-			if err != nil {
-				resolveErr = fmt.Errorf("GitHub: %s@%s: %w", repoPath, ref, err)
-				return match
-			}
-			r.mu.Lock()
-			r.cache[cacheKey] = sha
-			r.mu.Unlock()
+		sha, err := r.cachedSHA(repoPath, ref)
+		if err != nil {
+			resolveErr = fmt.Errorf("GitHub: %s@%s: %w", repoPath, ref, err)
+			return match
 		}
-
 		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref)
 	})
-
 	return result, resolveErr
+}
+
+// cachedSHA returns the SHA for repo@ref, fetching and caching it if needed.
+func (r *githubResolver) cachedSHA(repoPath, ref string) (string, error) {
+	cacheKey := repoPath + "@" + ref
+	r.mu.Lock()
+	sha, ok := r.cache[cacheKey]
+	r.mu.Unlock()
+	if ok {
+		return sha, nil
+	}
+	sha, err := r.fetchSHA(repoPath, ref)
+	if err != nil {
+		return "", err
+	}
+	r.mu.Lock()
+	r.cache[cacheKey] = sha
+	r.mu.Unlock()
+	return sha, nil
 }
 
 func (r *githubResolver) fetchSHA(repo, ref string) (string, error) {

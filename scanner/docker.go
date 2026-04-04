@@ -12,6 +12,9 @@ import (
 // Does not match digest refs (image@sha256:...) — those are already pinned.
 var dockerImageRegex = mustCompile(`(image:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`)
 
+// dockerPinnedRegex matches already-pinned `image: name@sha256:digest # tag`.
+var dockerPinnedRegex = mustCompile(`image:\s+['"]?([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)['"]?\s+#\s+(\S+)`)
+
 type dockerResolver struct {
 	client *http.Client
 	token  string // optional registry token (e.g. GitLab)
@@ -30,39 +33,51 @@ func newDockerResolver(registryToken string) *dockerResolver {
 // resolveImages replaces `image: name:tag` with `image: name@sha256:xxx # tag`
 // in the given content. Non-fatal: leaves unresolvable images untouched.
 func (d *dockerResolver) resolveImages(content string) string {
-	return dockerImageRegex.ReplaceAllStringFunc(content, func(match string) string {
-		parts := dockerImageRegex.FindStringSubmatch(match)
-		if len(parts) < 5 {
+	d.warnIfDrifted(content)
+	return dockerImageRegex.ReplaceAllStringFunc(content, d.pinImage)
+}
+
+// warnIfDrifted checks already-pinned image digests and warns if the tag now
+// resolves to a different digest. The file is never modified.
+func (d *dockerResolver) warnIfDrifted(content string) {
+	for _, parts := range dockerPinnedRegex.FindAllStringSubmatch(content, -1) {
+		image, pinnedDigest, tag := parts[1], parts[2], parts[3]
+		currentDigest, err := d.fetchDigest(image, tag)
+		if err != nil {
+			continue
+		}
+		if currentDigest != pinnedDigest {
+			fmt.Printf("%s%sWARNING: %s:%s digest has drifted — image was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
+				colorBold, colorYellow, image, tag, colorReset, pinnedDigest, currentDigest)
+		}
+	}
+}
+
+func (d *dockerResolver) pinImage(match string) string {
+	parts := dockerImageRegex.FindStringSubmatch(match)
+	if len(parts) < 5 {
+		return match
+	}
+	prefix, image, tag, suffix := parts[1], parts[2], parts[3], parts[4]
+	if isSHA(tag) || tag == "latest" {
+		return match
+	}
+	cacheKey := image + ":" + tag
+	d.mu.Lock()
+	digest, ok := d.cache[cacheKey]
+	d.mu.Unlock()
+	if !ok {
+		var err error
+		digest, err = d.fetchDigest(image, tag)
+		if err != nil {
+			fmt.Printf("  warn: docker image %s:%s: %v\n", image, tag, err)
 			return match
 		}
-		prefix := parts[1] // "image: "
-		image := parts[2]  // "maildev/maildev"
-		tag := parts[3]    // "2.2.1"
-		suffix := parts[4] // closing quote if any
-
-		// Already a digest or "latest" — skip
-		if isSHA(tag) || tag == "latest" {
-			return match
-		}
-
-		cacheKey := image + ":" + tag
 		d.mu.Lock()
-		digest, ok := d.cache[cacheKey]
+		d.cache[cacheKey] = digest
 		d.mu.Unlock()
-		if !ok {
-			var err error
-			digest, err = d.fetchDigest(image, tag)
-			if err != nil {
-				fmt.Printf("  warn: docker image %s:%s: %v\n", image, tag, err)
-				return match
-			}
-			d.mu.Lock()
-			d.cache[cacheKey] = digest
-			d.mu.Unlock()
-		}
-
-		return fmt.Sprintf("%s%s@%s%s # %s", prefix, image, digest, suffix, tag)
-	})
+	}
+	return fmt.Sprintf("%s%s@%s%s # %s", prefix, image, digest, suffix, tag)
 }
 
 // fetchDigest fetches the docker content digest for image:tag.

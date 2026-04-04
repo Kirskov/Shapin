@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,20 @@ import (
 	"pintosha/provider"
 )
 
+const (
+	FormatText = "text"
+	FormatJSON = "json"
+	FormatSARIF = "sarif"
+)
+
 // Run is the main entrypoint: scans the project at cfg.Path and pins all refs.
 func Run(cfg Config) error {
+	out, closeOut, err := openOutput(cfg.Output)
+	if err != nil {
+		return err
+	}
+	defer closeOut()
+
 	providers := []provider.Provider{
 		newGitHubResolver(cfg.GitHubToken),
 		newGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
@@ -26,8 +39,13 @@ func Run(cfg Config) error {
 	}
 
 	if len(files) == 0 {
-		fmt.Println("No workflow files found.")
+		fmt.Fprintln(out, "No workflow files found.")
 		return nil
+	}
+
+	format := cfg.Format
+	if format == "" {
+		format = FormatText
 	}
 
 	const workers = 8
@@ -35,6 +53,8 @@ func Run(cfg Config) error {
 		anyChanged atomic.Bool
 		wg         sync.WaitGroup
 		sem        = make(chan struct{}, workers)
+		mu         sync.Mutex
+		changes    []FileChange
 	)
 
 	for _, file := range files {
@@ -43,25 +63,54 @@ func Run(cfg Config) error {
 		go func(f string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			changed, err := processFile(f, cfg.Path, providers, cfg.DryRun, cfg.PinActions, cfg.PinImages)
+			fc, err := processFile(f, cfg.Path, providers, processOpts{
+					dryRun:     cfg.DryRun,
+					pinActions: cfg.PinActions,
+					pinImages:  cfg.PinImages,
+					format:     format,
+					out:        out,
+				})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warn: %s: %v\n", f, err)
 				return
 			}
-			if changed {
+			if fc != nil {
 				anyChanged.Store(true)
+				mu.Lock()
+				changes = append(changes, *fc)
+				mu.Unlock()
 			}
 		}(file)
 	}
 	wg.Wait()
 
+	switch format {
+	case FormatJSON:
+		return renderJSON(out, changes)
+	case FormatSARIF:
+		return renderSARIF(out, changes)
+	}
+
 	if cfg.DryRun && anyChanged.Load() {
-		fmt.Println("\n(dry-run) No files were modified.")
+		fmt.Fprintln(out, "\n(dry-run) No files were modified.")
 	} else if !anyChanged.Load() {
-		fmt.Println("All refs already pinned — nothing to do.")
+		fmt.Fprintln(out, "All refs already pinned — nothing to do.")
 	}
 
 	return nil
+}
+
+// openOutput returns a writer for cfg.Output (a file path) or stdout,
+// plus a cleanup function to close the file if one was opened.
+func openOutput(path string) (io.Writer, func(), error) {
+	if path == "" {
+		return os.Stdout, func() { /* nothing to close */ }, nil
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, func() { /* nothing to close */ }, fmt.Errorf("opening output file: %w", err)
+	}
+	return f, func() { f.Close() }, nil
 }
 
 // findWorkflowFiles returns all CI files matching any registered provider,
@@ -117,8 +166,18 @@ func isExcluded(relPath string, patterns []string) bool {
 	return false
 }
 
+// processOpts groups the options passed to processFile.
+type processOpts struct {
+	dryRun     bool
+	pinActions bool
+	pinImages  bool
+	format     string
+	out        io.Writer
+}
+
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
-func processFile(path, root string, providers []provider.Provider, dryRun, pinActions, pinImages bool) (bool, error) {
+// Returns a non-nil *FileChange if anything changed, nil if content was already pinned.
+func processFile(path, root string, providers []provider.Provider, opts processOpts) (*FileChange, error) {
 	rel, _ := filepath.Rel(root, path)
 	slashRel := filepath.ToSlash(rel)
 
@@ -130,47 +189,71 @@ func processFile(path, root string, providers []provider.Provider, dryRun, pinAc
 		}
 	}
 	if matched == nil {
-		return false, fmt.Errorf("no provider matched %s", path)
+		return nil, fmt.Errorf("no provider matched %s", path)
 	}
 
 	original, err := os.ReadFile(path)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	updated, err := matched.Resolve(string(original), pinActions, pinImages)
+	updated, err := matched.Resolve(string(original), opts.pinActions, opts.pinImages)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	if updated == string(original) {
-		return false, nil
+		return nil, nil
 	}
 
-	printDiff(path, string(original), updated)
+	fc := collectChanges(path, string(original), updated)
 
-	if !dryRun {
+	if opts.format == FormatText {
+		printDiff(opts.out, path, string(original), updated)
+	}
+
+	if !opts.dryRun {
 		if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
-			return false, err
+			return nil, err
 		}
-		fmt.Printf("  updated %s\n", path)
+		if opts.format == FormatText {
+			fmt.Fprintf(opts.out, "  updated %s\n", path)
+		}
 	}
 
-	return true, nil
+	return &fc, nil
 }
 
-const (
-	colorReset = "\033[0m"
-	colorRed   = "\033[31m"
-	colorGreen = "\033[32m"
-	colorCyan  = "\033[36m"
-	colorBold  = "\033[1m"
+// isTTY reports whether stdout is an interactive terminal.
+func isTTY() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// color returns the ANSI escape code when stdout is a TTY, otherwise "".
+func color(code string) string {
+	if isTTY() {
+		return code
+	}
+	return ""
+}
+
+var (
+	colorReset  = color("\033[0m")
+	colorRed    = color("\033[31m")
+	colorGreen  = color("\033[32m")
+	colorYellow = color("\033[33m")
+	colorCyan   = color("\033[36m")
+	colorBold   = color("\033[1m")
 )
 
 // printDiff prints a colored unified-style diff of the changes.
-func printDiff(path, original, updated string) {
-	fmt.Printf("\n%s%s--- %s%s\n", colorBold, colorCyan, path, colorReset)
-	fmt.Printf("%s%s+++ %s (pinned)%s\n", colorBold, colorCyan, path, colorReset)
+func printDiff(out io.Writer, path, original, updated string) {
+	fmt.Fprintf(out, "\n%s%s--- %s%s\n", colorBold, colorCyan, path, colorReset)
+	fmt.Fprintf(out, "%s%s+++ %s (pinned)%s\n", colorBold, colorCyan, path, colorReset)
 
 	origLines := strings.Split(original, "\n")
 	updLines := strings.Split(updated, "\n")
@@ -186,10 +269,10 @@ func printDiff(path, original, updated string) {
 		}
 		if o != u {
 			if i < len(origLines) {
-				fmt.Printf("%s-%s%s\n", colorRed, o, colorReset)
+				fmt.Fprintf(out, "%s-%s%s\n", colorRed, o, colorReset)
 			}
 			if i < len(updLines) {
-				fmt.Printf("%s+%s%s\n", colorGreen, u, colorReset)
+				fmt.Fprintf(out, "%s+%s%s\n", colorGreen, u, colorReset)
 			}
 		}
 	}

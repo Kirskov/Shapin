@@ -461,7 +461,7 @@ func TestRunnerDryRun(t *testing.T) {
 	}
 
 	for _, f := range files {
-		_, err := processFile(f, dir, providers, true, true, false)
+		_, err := processFile(f, dir, providers, processOpts{dryRun: true, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 		if err != nil {
 			t.Fatalf("processFile: %v", err)
 		}
@@ -494,11 +494,11 @@ func TestRunnerAppliesChanges(t *testing.T) {
 		newGitLabResolver(gitlabCom, ""),
 	}
 
-	changed, err := processFile(ghDir+ciYML, dir, providers, false, true, false)
+	fc, err := processFile(ghDir+ciYML, dir, providers, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 	if err != nil {
 		t.Fatalf("processFile: %v", err)
 	}
-	if !changed {
+	if fc == nil {
 		t.Error("expected changed=true")
 	}
 
@@ -572,12 +572,12 @@ func processFilesConcurrently(t *testing.T, files []string, root string, provide
 		go func(path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			changed, err := processFile(path, root, providers, false, true, false)
+			fc, err := processFile(path, root, providers, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 			if err != nil {
 				t.Errorf("processFile(%s): %v", path, err)
 				return
 			}
-			if changed {
+			if fc != nil {
 				anyChanged.Store(true)
 			}
 		}(f)

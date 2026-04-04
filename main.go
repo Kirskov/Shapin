@@ -26,6 +26,8 @@ func main() {
 	pinActions := flag.Bool("pin-actions", true, "pin GitHub Actions uses: refs to SHAs")
 	pinImages := flag.Bool("pin-images", true, "pin Docker image: tags to digests")
 	exclude := flag.String("exclude", "", "comma-separated glob patterns to exclude (e.g. '.github/workflows/skip.yml')")
+	output := flag.String("output", "", "write output to file instead of stdout")
+	format := flag.String("format", "text", "output format: text, json, sarif")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(version, "v", false, "print version and exit")
 	flag.Parse()
@@ -42,7 +44,7 @@ func main() {
 
 	var excludePatterns []string
 	if *exclude != "" {
-		for _, p := range strings.Split(*exclude, ",") {
+		for p := range strings.SplitSeq(*exclude, ",") {
 			if t := strings.TrimSpace(p); t != "" {
 				excludePatterns = append(excludePatterns, t)
 			}
@@ -58,6 +60,8 @@ func main() {
 		PinActions:  *pinActions,
 		PinImages:   *pinImages,
 		Exclude:     excludePatterns,
+		Output:      *output,
+		Format:      *format,
 	}
 
 	cfgFile, err := scanner.LoadConfigFile(*configPath)
