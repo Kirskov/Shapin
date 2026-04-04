@@ -69,14 +69,15 @@ verify_checksum() {
     return 0
   fi
 
+  echo "  expected: $expected"
+  echo "  got:      $actual"
+
   if [ "$actual" != "$expected" ]; then
     echo "Checksum mismatch!"
-    echo "  expected: $expected"
-    echo "  got:      $actual"
     exit 1
   fi
 
-  echo "Checksum verified."
+  echo "Checksum OK."
 }
 
 # ── Fetch latest release tag ─────────────────────────────────────────────────
