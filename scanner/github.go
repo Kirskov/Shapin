@@ -30,8 +30,16 @@ func newGitHubResolver(token string) *githubResolver {
 	}
 }
 
-// resolve replaces `uses: action@tag` and/or `image: name:tag` with pinned SHAs.
-func (r *githubResolver) resolve(content string, pinActions, pinImages bool) (string, error) {
+func (r *githubResolver) Name() string { return "GitHub Actions" }
+
+func (r *githubResolver) IsMatch(relPath string) bool {
+	dir := slashDir(relPath)
+	return (dir == ".github/workflows" || strings.HasPrefix(dir, ".github/workflows/")) &&
+		isYAML(slashBase(relPath))
+}
+
+// Resolve replaces `uses: action@tag` and/or `image: name:tag` with pinned SHAs.
+func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
 	var resolveErr error
 
 	if pinImages {

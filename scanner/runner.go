@@ -9,7 +9,12 @@ import (
 
 // Run is the main entrypoint: scans the project at cfg.Path and pins all refs.
 func Run(cfg Config) error {
-	files, err := findWorkflowFiles(cfg.Path)
+	providers := []Provider{
+		newGitHubResolver(cfg.GitHubToken),
+		newGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
+	}
+
+	files, err := findWorkflowFiles(cfg.Path, providers)
 	if err != nil {
 		return fmt.Errorf("scanning path: %w", err)
 	}
@@ -19,12 +24,9 @@ func Run(cfg Config) error {
 		return nil
 	}
 
-	gh := newGitHubResolver(cfg.GitHubToken)
-	gl := newGitLabResolver(cfg.GitLabHost, cfg.GitLabToken)
-
 	anyChanged := false
 	for _, file := range files {
-		changed, err := processFile(file, gh, gl, cfg.DryRun, cfg.PinActions, cfg.PinImages)
+		changed, err := processFile(file, cfg.Path, providers, cfg.DryRun, cfg.PinActions, cfg.PinImages)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: %s: %v\n", file, err)
 			continue
@@ -43,9 +45,8 @@ func Run(cfg Config) error {
 	return nil
 }
 
-// findWorkflowFiles returns all GitHub Actions workflow files and GitLab CI files
-// under the given root path.
-func findWorkflowFiles(root string) ([]string, error) {
+// findWorkflowFiles returns all CI files matching any registered provider.
+func findWorkflowFiles(root string, providers []Provider) ([]string, error) {
 	var files []string
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -53,7 +54,6 @@ func findWorkflowFiles(root string) ([]string, error) {
 			return nil // skip unreadable dirs
 		}
 		if d.IsDir() {
-			// Skip common noise directories
 			name := d.Name()
 			if name == "node_modules" || name == ".git" || name == "vendor" || name == "dist" {
 				return filepath.SkipDir
@@ -62,17 +62,13 @@ func findWorkflowFiles(root string) ([]string, error) {
 		}
 
 		rel, _ := filepath.Rel(root, path)
+		slashRel := filepath.ToSlash(rel)
 
-		// GitHub Actions: .github/workflows/*.yml or *.yaml
-		if isGitHubWorkflow(rel) {
-			files = append(files, path)
-			return nil
-		}
-
-		// GitLab CI: .gitlab-ci.yml, .gitlab-ci.yaml, or files included via include:
-		if isGitLabCI(rel) {
-			files = append(files, path)
-			return nil
+		for _, p := range providers {
+			if p.IsMatch(slashRel) {
+				files = append(files, path)
+				break
+			}
 		}
 
 		return nil
@@ -81,58 +77,37 @@ func findWorkflowFiles(root string) ([]string, error) {
 	return files, err
 }
 
-func isYAML(name string) bool {
-	return strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")
-}
-
-func isGitHubWorkflow(rel string) bool {
-	dir := filepath.ToSlash(filepath.Dir(rel))
-	return (dir == ".github/workflows" || strings.HasPrefix(dir, ".github/workflows/")) &&
-		isYAML(filepath.Base(rel))
-}
-
-func isGitLabCI(rel string) bool {
-	dir := filepath.ToSlash(filepath.Dir(rel))
-	name := filepath.Base(rel)
-
-	// Root-level .gitlab-ci.yml or .gitlab-ci-*.yml
-	if dir == "." && (name == ".gitlab-ci.yml" || name == ".gitlab-ci.yaml" ||
-		strings.HasPrefix(name, ".gitlab-ci-") && isYAML(name)) {
-		return true
-	}
-
-	// Any YAML file inside .gitlab/ or .gitlab/<subfolder>/
-	if dir == ".gitlab" || strings.HasPrefix(dir, ".gitlab/") {
-		return isYAML(name)
-	}
-
-	return false
-}
-
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
-func processFile(path string, gh *githubResolver, gl *gitlabResolver, dryRun, pinActions, pinImages bool) (bool, error) {
+func processFile(path, root string, providers []Provider, dryRun, pinActions, pinImages bool) (bool, error) {
+	rel, _ := filepath.Rel(root, path)
+	slashRel := filepath.ToSlash(rel)
+
+	var matched Provider
+	for _, p := range providers {
+		if p.IsMatch(slashRel) {
+			matched = p
+			break
+		}
+	}
+	if matched == nil {
+		return false, fmt.Errorf("no provider matched %s", path)
+	}
+
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
 	}
 
-	content := string(original)
-	var updated string
-
-	if isGitHubWorkflow(filepath.ToSlash(path)) {
-		updated, err = gh.resolve(content, pinActions, pinImages)
-	} else {
-		updated, err = gl.resolve(content, pinActions, pinImages)
-	}
+	updated, err := matched.Resolve(string(original), pinActions, pinImages)
 	if err != nil {
 		return false, err
 	}
 
-	if updated == content {
+	if updated == string(original) {
 		return false, nil
 	}
 
-	printDiff(path, content, updated)
+	printDiff(path, string(original), updated)
 
 	if !dryRun {
 		if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
@@ -144,13 +119,12 @@ func processFile(path string, gh *githubResolver, gl *gitlabResolver, dryRun, pi
 	return true, nil
 }
 
-
 const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorCyan   = "\033[36m"
-	colorBold   = "\033[1m"
+	colorReset = "\033[0m"
+	colorRed   = "\033[31m"
+	colorGreen = "\033[32m"
+	colorCyan  = "\033[36m"
+	colorBold  = "\033[1m"
 )
 
 // printDiff prints a colored unified-style diff of the changes.

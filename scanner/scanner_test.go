@@ -34,6 +34,7 @@ func TestIsSHA(t *testing.T) {
 // ── isGitHubWorkflow ─────────────────────────────────────────────────────────
 
 func TestIsGitHubWorkflow(t *testing.T) {
+	p := newGitHubResolver("")
 	cases := []struct {
 		path string
 		want bool
@@ -41,14 +42,14 @@ func TestIsGitHubWorkflow(t *testing.T) {
 		{".github/workflows/ci.yml", true},
 		{".github/workflows/release.yaml", true},
 		{".github/workflows/sub/deploy.yml", true},
-		{".github/ci.yml", false},          // not in workflows/
-		{"workflows/ci.yml", false},         // missing .github/
+		{".github/ci.yml", false},
+		{"workflows/ci.yml", false},
 		{".gitlab-ci.yml", false},
 		{"src/main.go", false},
 	}
 	for _, c := range cases {
-		if got := isGitHubWorkflow(c.path); got != c.want {
-			t.Errorf("isGitHubWorkflow(%q) = %v, want %v", c.path, got, c.want)
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("GitHub IsMatch(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -56,6 +57,7 @@ func TestIsGitHubWorkflow(t *testing.T) {
 // ── isGitLabCI ───────────────────────────────────────────────────────────────
 
 func TestIsGitLabCI(t *testing.T) {
+	p := newGitLabResolver("https://gitlab.com", "")
 	cases := []struct {
 		path string
 		want bool
@@ -70,8 +72,8 @@ func TestIsGitLabCI(t *testing.T) {
 		{"ci.yml", false},
 	}
 	for _, c := range cases {
-		if got := isGitLabCI(c.path); got != c.want {
-			t.Errorf("isGitLabCI(%q) = %v, want %v", c.path, got, c.want)
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("GitLab IsMatch(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -166,7 +168,7 @@ func TestGitHubResolverPinsActions(t *testing.T) {
 	}
 
 	content := "      - uses: actions/checkout@v4\n"
-	got, err := r.resolve(content, true, false)
+	got, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +184,7 @@ func TestGitHubResolverSkipsAlreadyPinned(t *testing.T) {
 	sha := "aabbccdd11223344556677889900aabbccdd1100"
 	content := fmt.Sprintf("      - uses: actions/checkout@%s # v4\n", sha)
 
-	got, err := r.resolve(content, true, false)
+	got, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +211,7 @@ func TestGitHubResolverPinImages(t *testing.T) {
 	r.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "        image: myregistry.example.com/myimage:1.2.3\n"
-	got, err := r.resolve(content, false, true)
+	got, err := r.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

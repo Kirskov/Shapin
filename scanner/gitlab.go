@@ -30,8 +30,22 @@ func newGitLabResolver(host, token string) *gitlabResolver {
 	}
 }
 
-// resolve replaces image tags and/or component refs with their SHAs.
-func (r *gitlabResolver) resolve(content string, pinActions, pinImages bool) (string, error) {
+func (r *gitlabResolver) Name() string { return "GitLab CI" }
+
+func (r *gitlabResolver) IsMatch(relPath string) bool {
+	dir := slashDir(relPath)
+	name := slashBase(relPath)
+
+	if dir == "." && (name == ".gitlab-ci.yml" || name == ".gitlab-ci.yaml" ||
+		strings.HasPrefix(name, ".gitlab-ci-") && isYAML(name)) {
+		return true
+	}
+
+	return dir == ".gitlab" || strings.HasPrefix(dir, ".gitlab/") && isYAML(name)
+}
+
+// Resolve replaces image tags and/or component refs with their SHAs.
+func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
 	var resolveErr error
 
 	result := content
