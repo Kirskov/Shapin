@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          GOOS=linux   GOARCH=amd64 go build -o dist/digestify-my-ci-linux-amd64   .
+          GOOS=linux   GOARCH=arm64 go build -o dist/digestify-my-ci-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64 go build -o dist/digestify-my-ci-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64 go build -o dist/digestify-my-ci-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 go build -o dist/digestify-my-ci-windows-amd64.exe .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        with:
+          files: dist/*
+          generate_release_notes: true
