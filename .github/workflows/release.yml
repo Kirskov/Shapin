@@ -21,7 +21,8 @@ jobs:
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF_NAME}
-          LDFLAGS="-X main.Version=${VERSION}"
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT}"
           GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-amd64   .
           GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-arm64   .
           GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-amd64  .

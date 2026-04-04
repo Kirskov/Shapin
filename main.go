@@ -8,8 +8,11 @@ import (
 	"pintosha/scanner"
 )
 
-// Version is set at build time via -ldflags "-X main.Version=v1.2.3".
-var Version = "dev"
+// Version and Commit are set at build time via ldflags.
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
 
 func main() {
 	path := flag.String("path", ".", "path to the project to scan")
@@ -24,7 +27,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println(Version)
+		fmt.Printf("%s (commit: %s)\n", Version, Commit)
 		return
 	}
 
