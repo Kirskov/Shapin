@@ -26,8 +26,16 @@ jobs:
           GOOS=darwin  GOARCH=arm64 go build -o dist/digestify-my-ci-darwin-arm64  .
           GOOS=windows GOARCH=amd64 go build -o dist/digestify-my-ci-windows-amd64.exe .
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
-          files: dist/*
+          files: |
+            dist/*
+            dist/checksums.txt
           generate_release_notes: true
