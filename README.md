@@ -23,16 +23,40 @@ The tool scans recursively under `--path`, skipping `node_modules`, `.git`, `ven
 
 ## Installation
 
+### One-liner (Linux / macOS)
+
 ```sh
-git clone https://github.com/yourname/pintosha
-cd pintosha
-go build -o pintosha .
+curl -fsSL https://raw.githubusercontent.com/Kirskov/Digestify-My-Ci/main/install.sh | sh
 ```
 
-Or install directly:
+Supports Ubuntu, Debian, Kali, Arch, Alpine, Red Hat, Fedora, and macOS.
+The script will automatically detect your OS and architecture, download the correct binary, verify its SHA256 checksum, and install it to `/usr/local/bin`.
+
+To install a specific version:
 
 ```sh
-go install pintosha@latest
+VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/Kirskov/Digestify-My-Ci/main/install.sh | sh
+```
+
+### Manual
+
+Download the binary for your platform from the [releases page](https://github.com/Kirskov/Digestify-My-Ci/releases), verify the checksum against `checksums.txt`, and move it to your PATH:
+
+```sh
+# Example for Linux amd64
+curl -fsSL https://github.com/Kirskov/Digestify-My-Ci/releases/latest/download/digestify-my-ci-linux-amd64 -o digestify-my-ci
+curl -fsSL https://github.com/Kirskov/Digestify-My-Ci/releases/latest/download/checksums.txt -o checksums.txt
+grep digestify-my-ci-linux-amd64 checksums.txt | sha256sum --check
+chmod +x digestify-my-ci
+sudo mv digestify-my-ci /usr/local/bin/
+```
+
+### Build from source
+
+```sh
+git clone https://github.com/Kirskov/Digestify-My-Ci.git
+cd Digestify-My-Ci
+go build -o digestify-my-ci .
 ```
 
 ## Usage
