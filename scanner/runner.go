@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"pintosha/provider"
 )
@@ -26,21 +28,34 @@ func Run(cfg Config) error {
 		return nil
 	}
 
-	anyChanged := false
-	for _, file := range files {
-		changed, err := processFile(file, cfg.Path, providers, cfg.DryRun, cfg.PinActions, cfg.PinImages)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: %s: %v\n", file, err)
-			continue
-		}
-		if changed {
-			anyChanged = true
-		}
-	}
+	const workers = 8
+	var (
+		anyChanged atomic.Bool
+		wg         sync.WaitGroup
+		sem        = make(chan struct{}, workers)
+	)
 
-	if cfg.DryRun && anyChanged {
+	for _, file := range files {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(f string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			changed, err := processFile(f, cfg.Path, providers, cfg.DryRun, cfg.PinActions, cfg.PinImages)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warn: %s: %v\n", f, err)
+				return
+			}
+			if changed {
+				anyChanged.Store(true)
+			}
+		}(file)
+	}
+	wg.Wait()
+
+	if cfg.DryRun && anyChanged.Load() {
 		fmt.Println("\n(dry-run) No files were modified.")
-	} else if !anyChanged {
+	} else if !anyChanged.Load() {
 		fmt.Println("All refs already pinned — nothing to do.")
 	}
 
@@ -137,11 +152,8 @@ func printDiff(path, original, updated string) {
 	origLines := strings.Split(original, "\n")
 	updLines := strings.Split(updated, "\n")
 
-	maxLen := len(origLines)
-	if len(updLines) > maxLen {
-		maxLen = len(updLines)
-	}
-	for i := 0; i < maxLen; i++ {
+	maxLen := max(len(origLines), len(updLines))
+	for i := range maxLen {
 		var o, u string
 		if i < len(origLines) {
 			o = origLines[i]

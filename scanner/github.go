@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const githubJSONAccept = "application/vnd.github+json"
@@ -17,6 +18,7 @@ var githubActionRegex = regexp.MustCompile(`(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-
 type githubResolver struct {
 	token  string
 	client *http.Client
+	mu     sync.Mutex
 	cache  map[string]string
 	docker *dockerResolver
 }
@@ -72,7 +74,9 @@ func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (st
 		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
 		cacheKey := repoPath + "@" + ref
 
+		r.mu.Lock()
 		sha, ok := r.cache[cacheKey]
+		r.mu.Unlock()
 		if !ok {
 			var err error
 			sha, err = r.fetchSHA(repoPath, ref)
@@ -80,7 +84,9 @@ func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (st
 				resolveErr = fmt.Errorf("GitHub: %s@%s: %w", repoPath, ref, err)
 				return match
 			}
+			r.mu.Lock()
 			r.cache[cacheKey] = sha
+			r.mu.Unlock()
 		}
 
 		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref)

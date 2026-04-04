@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // gitlabComponentRegex matches GitLab CI components:
@@ -16,6 +17,7 @@ type gitlabResolver struct {
 	host   string
 	token  string
 	client *http.Client
+	mu     sync.Mutex
 	cache  map[string]string
 	docker *dockerResolver
 }
@@ -76,7 +78,9 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 		}
 
 		cacheKey := "component:" + component + "@" + ref
+		r.mu.Lock()
 		sha, ok := r.cache[cacheKey]
+		r.mu.Unlock()
 		if !ok {
 			var err error
 			sha, err = r.fetchComponentSHA(component, ref)
@@ -84,7 +88,9 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 				fmt.Printf("  warn: GitLab component %s@%s: %v\n", component, ref, err)
 				return match
 			}
+			r.mu.Lock()
 			r.cache[cacheKey] = sha
+			r.mu.Unlock()
 		}
 
 		return fmt.Sprintf("%s%s@%s # %s", prefix, component, sha, ref)

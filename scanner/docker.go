@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 // dockerImageRegex is shared between GitHub and GitLab scanners.
@@ -14,6 +15,7 @@ var dockerImageRegex = mustCompile(`(image:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z
 type dockerResolver struct {
 	client *http.Client
 	token  string // optional registry token (e.g. GitLab)
+	mu     sync.Mutex
 	cache  map[string]string
 }
 
@@ -44,7 +46,9 @@ func (d *dockerResolver) resolveImages(content string) string {
 		}
 
 		cacheKey := image + ":" + tag
+		d.mu.Lock()
 		digest, ok := d.cache[cacheKey]
+		d.mu.Unlock()
 		if !ok {
 			var err error
 			digest, err = d.fetchDigest(image, tag)
@@ -52,7 +56,9 @@ func (d *dockerResolver) resolveImages(content string) string {
 				fmt.Printf("  warn: docker image %s:%s: %v\n", image, tag, err)
 				return match
 			}
+			d.mu.Lock()
 			d.cache[cacheKey] = digest
+			d.mu.Unlock()
 		}
 
 		return fmt.Sprintf("%s%s@%s%s # %s", prefix, image, digest, suffix, tag)
