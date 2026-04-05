@@ -50,3 +50,4 @@ jobs:
             dist/*
             dist/checksums.txt
           generate_release_notes: true
+          draft: false
