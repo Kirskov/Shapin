@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"pintosha/provider"
 	"pintosha/providers"
 )
 
@@ -33,7 +32,7 @@ func Run(cfg Config) error {
 	}
 	defer closeOut()
 
-	providerList := []provider.Provider{
+	providerList := []providers.Provider{
 		providers.NewGitHubResolver(cfg.GitHubToken),
 		providers.NewGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
 		providers.NewForgejoResolver(cfg.ForgejoHost, cfg.ForgejoToken),
@@ -128,7 +127,7 @@ func openOutput(path string) (io.Writer, func(), error) {
 
 // findWorkflowFiles returns all CI files matching any registered provider,
 // skipping any paths that match an exclude glob pattern.
-func findWorkflowFiles(root string, providers []provider.Provider, exclude []string) ([]string, error) {
+func findWorkflowFiles(root string, providers []providers.Provider, exclude []string) ([]string, error) {
 	var files []string
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -180,7 +179,7 @@ func isExcluded(relPath string, patterns []string) bool {
 }
 
 // matchProvider returns the first provider that matches the file's relative path.
-func matchProvider(path, root string, providers []provider.Provider) (provider.Provider, error) {
+func matchProvider(path, root string, providers []providers.Provider) (providers.Provider, error) {
 	rel, _ := filepath.Rel(root, path)
 	slashRel := filepath.ToSlash(rel)
 	for _, p := range providers {
@@ -202,7 +201,7 @@ type processOpts struct {
 
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
 // Returns a non-nil *FileChange if anything changed, nil if content was already pinned.
-func processFile(path, root string, providers []provider.Provider, opts processOpts) (*FileChange, error) {
+func processFile(path, root string, providers []providers.Provider, opts processOpts) (*FileChange, error) {
 	if err := assertWithinRoot(path, root); err != nil {
 		return nil, err
 	}
