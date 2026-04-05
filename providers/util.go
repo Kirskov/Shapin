@@ -63,7 +63,7 @@ func isSHA(s string) bool {
 
 // syncCache is a thread-safe string→string cache.
 type syncCache struct {
-	mu    sync.Mutex
+	mutex sync.Mutex
 	items map[string]string
 }
 
@@ -76,26 +76,26 @@ func newSyncCachePtr() *syncCache {
 	return &c
 }
 
-func (c *syncCache) getOrSet(key string, fetch func() (string, error)) (string, error) {
-	c.mu.Lock()
-	v, ok := c.items[key]
-	c.mu.Unlock()
+func (cache *syncCache) getOrSet(key string, fetch func() (string, error)) (string, error) {
+	cache.mutex.Lock()
+	cached, ok := cache.items[key]
+	cache.mutex.Unlock()
 	if ok {
-		return v, nil
+		return cached, nil
 	}
-	v, err := fetch()
+	value, err := fetch()
 	if err != nil {
 		return "", err
 	}
-	c.mu.Lock()
+	cache.mutex.Lock()
 	// Check again under lock in case another goroutine raced us.
-	if existing, ok := c.items[key]; ok {
-		c.mu.Unlock()
+	if existing, ok := cache.items[key]; ok {
+		cache.mutex.Unlock()
 		return existing, nil
 	}
-	c.items[key] = v
-	c.mu.Unlock()
-	return v, nil
+	cache.items[key] = value
+	cache.mutex.Unlock()
+	return value, nil
 }
 
 // replaceMatches calls fn for each non-overlapping match of re in content.
@@ -272,21 +272,21 @@ func doWithRetry(client *http.Client, req *http.Request) (*http.Response, error)
 func retryDelay(resp *http.Response) time.Duration {
 	const fallback = 60 * time.Second
 
-	if v := resp.Header.Get("Retry-After"); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil {
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		if secs, err := strconv.Atoi(retryAfter); err == nil {
 			return time.Duration(secs) * time.Second
 		}
-		if t, err := http.ParseTime(v); err == nil {
-			if d := time.Until(t); d > 0 {
-				return d
+		if parsedTime, err := http.ParseTime(retryAfter); err == nil {
+			if delay := time.Until(parsedTime); delay > 0 {
+				return delay
 			}
 		}
 	}
 
-	if v := resp.Header.Get("X-RateLimit-Reset"); v != "" {
-		if unix, err := strconv.ParseInt(v, 10, 64); err == nil {
-			if d := time.Until(time.Unix(unix, 0)); d > 0 {
-				return d
+	if rateLimitReset := resp.Header.Get("X-RateLimit-Reset"); rateLimitReset != "" {
+		if unix, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
+			if delay := time.Until(time.Unix(unix, 0)); delay > 0 {
+				return delay
 			}
 		}
 	}

@@ -68,10 +68,10 @@ func Run(cfg Config) error {
 	for _, file := range files {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(f string) {
+		go func(filePath string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fc, err := processFile(f, cfg.Path, providerList, processOpts{
+			fileChange, err := processFile(filePath, cfg.Path, providerList, processOpts{
 					dryRun:     cfg.DryRun,
 					pinActions: cfg.PinActions,
 					pinImages:  cfg.PinImages,
@@ -79,13 +79,13 @@ func Run(cfg Config) error {
 					out:        out,
 				})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "warn: %s: %v\n", f, err)
+				fmt.Fprintf(os.Stderr, "warn: %s: %v\n", filePath, err)
 				return
 			}
-			if fc != nil {
+			if fileChange != nil {
 				anyChanged.Store(true)
 				mu.Lock()
-				changes = append(changes, *fc)
+				changes = append(changes, *fileChange)
 				mu.Unlock()
 			}
 		}(file)
@@ -115,12 +115,12 @@ func openOutput(path string) (io.Writer, func(), error) {
 	if path == "" {
 		return os.Stdout, noop, nil
 	}
-	f, err := os.Create(path) // #nosec G304 — path is user-supplied --output flag, intentional
+	outputFile, err := os.Create(path) // #nosec G304 — path is user-supplied --output flag, intentional
 	if err != nil {
 		return nil, noop, fmt.Errorf("opening output file: %w", err)
 	}
-	return f, func() {
-		if err := f.Close(); err != nil {
+	return outputFile, func() {
+		if err := outputFile.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: closing output file: %v\n", err)
 		}
 	}, nil
