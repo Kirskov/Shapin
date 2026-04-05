@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -30,8 +31,8 @@ func LoadConfigFile(path string) (*ConfigFile, error) {
 		path = defaultConfigFile
 	}
 
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	data, err := os.ReadFile(path) // #nosec G304 — path is user-supplied --config flag, intentional
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil // no config file is fine
 	}
 	if err != nil {

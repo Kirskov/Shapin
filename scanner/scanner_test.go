@@ -934,12 +934,12 @@ func TestGitHubResolverAnnotatedTag(t *testing.T) {
 				"object": map[string]string{
 					"sha":  "tagobjectsha1234567890123456789012345678",
 					"type": "tag",
-					"url":  "http://" + r.Host + tagObjURL,
+					"url":  "https://api.github.com" + tagObjURL,
 				},
 			})
 			return
 		}
-		if r.URL.Path == tagObjURL {
+		if strings.HasSuffix(r.URL.Path, tagObjURL) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"object": map[string]string{"sha": fakeSHA},
 			})
@@ -1020,7 +1020,7 @@ func TestDoWithRetryOn429(t *testing.T) {
 	defer srv.Close()
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	resp, err := doWithRetry(&http.Client{}, req, 3)
+	resp, err := doWithRetry(&http.Client{}, req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1041,7 +1041,7 @@ func TestDoWithRetryExhausted(t *testing.T) {
 	defer srv.Close()
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	_, err := doWithRetry(&http.Client{}, req, 2)
+	_, err := doWithRetry(&http.Client{}, req)
 	if err == nil {
 		t.Error("expected error after exhausting retries")
 	}

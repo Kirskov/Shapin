@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 const (
@@ -23,8 +22,7 @@ var githubPinnedRegex = mustCompile(patternGHPinned)
 type githubResolver struct {
 	token  string
 	client *http.Client
-	mu     sync.Mutex
-	cache  map[string]string
+	cache  syncCache
 	docker *dockerResolver
 }
 
@@ -36,7 +34,7 @@ func newGitHubResolverWithClient(token string, client *http.Client) *githubResol
 	return &githubResolver{
 		token:  token,
 		client: client,
-		cache:  make(map[string]string),
+		cache:  newSyncCache(),
 		docker: newDockerResolver(""),
 	}
 }
@@ -54,12 +52,10 @@ func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (st
 	if pinImages {
 		content = r.docker.resolveImages(content)
 	}
-	if pinActions {
-		r.warnIfDrifted(content)
-	}
 	if !pinActions {
 		return content, nil
 	}
+	r.warnIfDrifted(content)
 	return r.pinActions(content)
 }
 
@@ -68,14 +64,13 @@ func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (st
 func (r *githubResolver) warnIfDrifted(content string) {
 	for _, parts := range githubPinnedRegex.FindAllStringSubmatch(content, -1) {
 		action, pinnedSHA, tag := parts[1], parts[2], parts[3]
-		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
+		repoPath := actionRepoPath(action)
 		currentSHA, err := r.fetchSHA(repoPath, tag)
 		if err != nil {
-			continue // best-effort, skip on error
+			continue
 		}
 		if currentSHA != pinnedSHA {
-			fmt.Printf("%s%sWARNING: %s@%s has drifted — tag was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
-				colorBold, colorYellow, action, tag, colorReset, pinnedSHA, currentSHA)
+			warnDrift("tag", action, tag, pinnedSHA, currentSHA)
 		}
 	}
 }
@@ -83,46 +78,23 @@ func (r *githubResolver) warnIfDrifted(content string) {
 // pinActions pins floating `uses: action@tag` refs to their SHAs.
 func (r *githubResolver) pinActions(content string) (string, error) {
 	var resolveErr error
-	result := githubActionRegex.ReplaceAllStringFunc(content, func(match string) string {
+	result := replaceMatches(githubActionRegex, content, func(parts []string) (string, bool) {
 		if resolveErr != nil {
-			return match
-		}
-		parts := githubActionRegex.FindStringSubmatch(match)
-		if len(parts) < 4 {
-			return match
+			return "", false
 		}
 		prefix, action, ref := parts[1], parts[2], parts[3]
 		if isSHA(ref) {
-			return match
+			return "", false
 		}
-		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
-		sha, err := r.cachedSHA(repoPath, ref)
+		repoPath := actionRepoPath(action)
+		sha, err := r.cache.getOrSet(repoPath+"@"+ref, func() (string, error) { return r.fetchSHA(repoPath, ref) })
 		if err != nil {
 			resolveErr = fmt.Errorf("GitHub: %s@%s: %w", repoPath, ref, err)
-			return match
+			return "", false
 		}
-		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref)
+		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref), true
 	})
 	return result, resolveErr
-}
-
-// cachedSHA returns the SHA for repo@ref, fetching and caching it if needed.
-func (r *githubResolver) cachedSHA(repoPath, ref string) (string, error) {
-	cacheKey := repoPath + "@" + ref
-	r.mu.Lock()
-	sha, ok := r.cache[cacheKey]
-	r.mu.Unlock()
-	if ok {
-		return sha, nil
-	}
-	sha, err := r.fetchSHA(repoPath, ref)
-	if err != nil {
-		return "", err
-	}
-	r.mu.Lock()
-	r.cache[cacheKey] = sha
-	r.mu.Unlock()
-	return sha, nil
 }
 
 func (r *githubResolver) fetchSHA(repo, ref string) (string, error) {
@@ -144,7 +116,7 @@ func (r *githubResolver) fetchSHA(repo, ref string) (string, error) {
 		req.Header.Set("Authorization", bearerPrefix+r.token)
 	}
 
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -177,7 +149,7 @@ func (r *githubResolver) fetchTagSHA(repo, tag string) (string, error) {
 		req.Header.Set("Authorization", bearerPrefix+r.token)
 	}
 
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -200,23 +172,23 @@ func (r *githubResolver) fetchTagSHA(repo, tag string) (string, error) {
 
 	// Annotated tags point to a tag object, not the commit — dereference it
 	if result.Object.Type == "tag" {
-		return r.fetchTagObjectSHA(result.Object.URL, r.token)
+		return r.fetchTagObjectSHA(result.Object.URL)
 	}
 
 	return result.Object.SHA, nil
 }
 
-func (r *githubResolver) fetchTagObjectSHA(url, token string) (string, error) {
+func (r *githubResolver) fetchTagObjectSHA(url string) (string, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", githubJSONAccept)
-	if token != "" {
-		req.Header.Set("Authorization", bearerPrefix+token)
+	if r.token != "" {
+		req.Header.Set("Authorization", bearerPrefix+r.token)
 	}
 
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}

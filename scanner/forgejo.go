@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 const (
@@ -17,8 +16,7 @@ type forgejoResolver struct {
 	host   string
 	token  string
 	client *http.Client
-	mu     sync.Mutex
-	cache  map[string]string
+	cache  syncCache
 	docker *dockerResolver
 }
 
@@ -30,7 +28,7 @@ func newForgejoResolver(host, token string) *forgejoResolver {
 		host:   host,
 		token:  token,
 		client: &http.Client{},
-		cache:  make(map[string]string),
+		cache:  newSyncCache(),
 		docker: newDockerResolver(""),
 	}
 }
@@ -56,45 +54,23 @@ func (r *forgejoResolver) Resolve(content string, pinActions, pinImages bool) (s
 
 func (r *forgejoResolver) pinActions(content string) (string, error) {
 	var resolveErr error
-	result := githubActionRegex.ReplaceAllStringFunc(content, func(match string) string {
+	result := replaceMatches(githubActionRegex, content, func(parts []string) (string, bool) {
 		if resolveErr != nil {
-			return match
-		}
-		parts := githubActionRegex.FindStringSubmatch(match)
-		if len(parts) < 4 {
-			return match
+			return "", false
 		}
 		prefix, action, ref := parts[1], parts[2], parts[3]
 		if isSHA(ref) {
-			return match
+			return "", false
 		}
-		repoPath := strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
-		sha, err := r.cachedSHA(repoPath, ref)
+		repoPath := actionRepoPath(action)
+		sha, err := r.cache.getOrSet(repoPath+"@"+ref, func() (string, error) { return r.fetchSHA(repoPath, ref) })
 		if err != nil {
 			resolveErr = fmt.Errorf("Forgejo: %s@%s: %w", repoPath, ref, err)
-			return match
+			return "", false
 		}
-		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref)
+		return fmt.Sprintf("%s%s@%s # %s", prefix, action, sha, ref), true
 	})
 	return result, resolveErr
-}
-
-func (r *forgejoResolver) cachedSHA(repoPath, ref string) (string, error) {
-	cacheKey := repoPath + "@" + ref
-	r.mu.Lock()
-	sha, ok := r.cache[cacheKey]
-	r.mu.Unlock()
-	if ok {
-		return sha, nil
-	}
-	sha, err := r.fetchSHA(repoPath, ref)
-	if err != nil {
-		return "", err
-	}
-	r.mu.Lock()
-	r.cache[cacheKey] = sha
-	r.mu.Unlock()
-	return sha, nil
 }
 
 // fetchSHA tries tag first, then falls back to branch/commit.
@@ -111,7 +87,7 @@ func (r *forgejoResolver) fetchSHA(repo, ref string) (string, error) {
 	if r.token != "" {
 		req.Header.Set("Authorization", bearerPrefix+r.token)
 	}
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +116,7 @@ func (r *forgejoResolver) fetchTagSHA(repo, tag string) (string, error) {
 	if r.token != "" {
 		req.Header.Set("Authorization", bearerPrefix+r.token)
 	}
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}

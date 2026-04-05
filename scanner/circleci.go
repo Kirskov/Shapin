@@ -1,12 +1,8 @@
 package scanner
 
-import (
-	"net/http"
-	"sync"
-)
+import "net/http"
 
 type circleciResolver struct {
-	mu     sync.Mutex
 	docker *dockerResolver
 }
 

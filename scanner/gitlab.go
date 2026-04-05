@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
-
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,8 +28,7 @@ type gitlabResolver struct {
 	host   string
 	token  string
 	client *http.Client
-	mu     sync.Mutex
-	cache  map[string]string
+	cache  syncCache
 	docker *dockerResolver
 }
 
@@ -40,7 +37,7 @@ func newGitLabResolver(host, token string) *gitlabResolver {
 		host:   host,
 		token:  token,
 		client: &http.Client{},
-		cache:  make(map[string]string),
+		cache:  newSyncCache(),
 		docker: newDockerResolver(token),
 	}
 }
@@ -174,40 +171,22 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 	}
 
 	// Replace component: host/group/project/comp@tag → @sha
-	result = gitlabComponentRegex.ReplaceAllStringFunc(result, func(match string) string {
+	result = replaceMatches(gitlabComponentRegex, result, func(parts []string) (string, bool) {
 		if resolveErr != nil {
-			return match
+			return "", false
 		}
-
-		parts := gitlabComponentRegex.FindStringSubmatch(match)
-		if len(parts) < 4 {
-			return match
-		}
-		prefix := parts[1]    // "component: "
-		component := parts[2] // "gitlab.com/group/project/comp"
-		ref := parts[3]       // "v1.0"
-
+		prefix, component, ref := parts[1], parts[2], parts[3]
 		if isSHA(ref) {
-			return match
+			return "", false
 		}
-
-		cacheKey := "component:" + component + "@" + ref
-		r.mu.Lock()
-		sha, ok := r.cache[cacheKey]
-		r.mu.Unlock()
-		if !ok {
-			var err error
-			sha, err = r.fetchComponentSHA(component, ref)
-			if err != nil {
-				fmt.Printf("  warn: GitLab component %s@%s: %v\n", component, ref, err)
-				return match
-			}
-			r.mu.Lock()
-			r.cache[cacheKey] = sha
-			r.mu.Unlock()
+		sha, err := r.cache.getOrSet("component:"+component+"@"+ref, func() (string, error) {
+			return r.fetchComponentSHA(component, ref)
+		})
+		if err != nil {
+			fmt.Printf("  warn: GitLab component %s@%s: %v\n", component, ref, err)
+			return "", false
 		}
-
-		return fmt.Sprintf("%s%s@%s # %s", prefix, component, sha, ref)
+		return fmt.Sprintf("%s%s@%s # %s", prefix, component, sha, ref), true
 	})
 
 	return result, resolveErr
@@ -223,8 +202,7 @@ func (r *gitlabResolver) warnIfDrifted(content string) {
 			continue
 		}
 		if currentSHA != pinnedSHA {
-			fmt.Printf("%s%sWARNING: component %s@%s has drifted — ref was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
-				colorBold, colorYellow, component, tag, colorReset, pinnedSHA, currentSHA)
+			warnDrift("ref", component, tag, pinnedSHA, currentSHA)
 		}
 	}
 }
@@ -251,7 +229,7 @@ func (r *gitlabResolver) fetchComponentSHA(component, ref string) (string, error
 		req.Header.Set("PRIVATE-TOKEN", r.token)
 	}
 
-	resp, err := doWithRetry(r.client, req, 3)
+	resp, err := doWithRetry(r.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -268,19 +246,6 @@ func (r *gitlabResolver) fetchComponentSHA(component, ref string) (string, error
 		return "", err
 	}
 	return result.ID, nil
-}
-
-// splitRegistryAndRepo splits "registry.gitlab.com/group/image" into
-// ("registry.gitlab.com", "group/image"). Defaults to Docker Hub.
-func splitRegistryAndRepo(image string) (host, repo string) {
-	parts := strings.SplitN(image, "/", 2)
-	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
-		return parts[0], parts[1]
-	}
-	if !strings.Contains(image, "/") {
-		return "registry-1.docker.io", "library/" + image
-	}
-	return "registry-1.docker.io", image
 }
 
 // extractProjectPath extracts "group/project" from a component path like

@@ -4,7 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sync"
+	"strings"
+)
+
+const (
+	dockerHubRegistry   = "registry-1.docker.io"
+	dockerHubAuthURL    = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull"
+	ghcrAuthURL         = "https://ghcr.io/token?scope=repository:%s:pull"
+	genericAuthURL      = "https://%s/v2/token?scope=repository:%s:pull&service=%s"
+	dockerContentDigest = "Docker-Content-Digest"
 )
 
 // dockerImageRegex is shared between GitHub and GitLab scanners.
@@ -18,15 +26,14 @@ var dockerPinnedRegex = mustCompile(patternDockerPinned)
 type dockerResolver struct {
 	client *http.Client
 	token  string // optional registry token (e.g. GitLab)
-	mu     sync.Mutex
-	cache  map[string]string
+	cache  syncCache
 }
 
 func newDockerResolver(registryToken string) *dockerResolver {
 	return &dockerResolver{
 		client: &http.Client{},
 		token:  registryToken,
-		cache:  make(map[string]string),
+		cache:  newSyncCache(),
 	}
 }
 
@@ -47,8 +54,7 @@ func (d *dockerResolver) warnIfDrifted(content string) {
 			continue
 		}
 		if currentDigest != pinnedDigest {
-			fmt.Printf("%s%sWARNING: %s:%s digest has drifted — image was mutated!%s\n  pinned: %s\n  current: %s\n  → update this ref manually\n",
-				colorBold, colorYellow, image, tag, colorReset, pinnedDigest, currentDigest)
+			warnDrift("image", image, tag, pinnedDigest, currentDigest)
 		}
 	}
 }
@@ -62,20 +68,12 @@ func (d *dockerResolver) pinImage(match string) string {
 	if isSHA(tag) || tag == "latest" {
 		return match
 	}
-	cacheKey := image + ":" + tag
-	d.mu.Lock()
-	digest, ok := d.cache[cacheKey]
-	d.mu.Unlock()
-	if !ok {
-		var err error
-		digest, err = d.fetchDigest(image, tag)
-		if err != nil {
-			fmt.Printf("  warn: docker image %s:%s: %v\n", image, tag, err)
-			return match
-		}
-		d.mu.Lock()
-		d.cache[cacheKey] = digest
-		d.mu.Unlock()
+	digest, err := d.cache.getOrSet(image+":"+tag, func() (string, error) {
+		return d.fetchDigest(image, tag)
+	})
+	if err != nil {
+		fmt.Printf("  warn: docker image %s:%s: %v\n", image, tag, err)
+		return match
 	}
 	return fmt.Sprintf("%s%s@%s%s # %s", prefix, image, digest, suffix, tag)
 }
@@ -104,7 +102,7 @@ func (d *dockerResolver) fetchDigest(image, tag string) (string, error) {
 		req.Header.Set("Authorization", bearerPrefix+d.token)
 	}
 
-	resp, err := doWithRetry(d.client, req, 3)
+	resp, err := doWithRetry(d.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -114,9 +112,9 @@ func (d *dockerResolver) fetchDigest(image, tag string) (string, error) {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	digest := resp.Header.Get("Docker-Content-Digest")
+	digest := resp.Header.Get(dockerContentDigest)
 	if digest == "" {
-		return "", fmt.Errorf("no Docker-Content-Digest header in response")
+		return "", fmt.Errorf("no %s header in response", dockerContentDigest)
 	}
 	return digest, nil
 }
@@ -126,20 +124,20 @@ func (d *dockerResolver) fetchAuthToken(registryHost, repoPath string) (string, 
 	// Determine auth URL based on registry
 	var authURL string
 	switch registryHost {
-	case "registry-1.docker.io":
-		authURL = fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull", repoPath)
+	case dockerHubRegistry:
+		authURL = fmt.Sprintf(dockerHubAuthURL, repoPath)
 	case "ghcr.io":
-		authURL = fmt.Sprintf("https://ghcr.io/token?scope=repository:%s:pull", repoPath)
+		authURL = fmt.Sprintf(ghcrAuthURL, repoPath)
 	default:
 		// Try standard OAuth2 token endpoint (works for most OCI registries)
-		authURL = fmt.Sprintf("https://%s/v2/token?scope=repository:%s:pull&service=%s", registryHost, repoPath, registryHost)
+		authURL = fmt.Sprintf(genericAuthURL, registryHost, repoPath, registryHost)
 	}
 
 	authReq, err := http.NewRequest("GET", authURL, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := doWithRetry(d.client, authReq, 3)
+	resp, err := doWithRetry(d.client, authReq)
 	if err != nil {
 		return "", err
 	}
@@ -161,4 +159,17 @@ func (d *dockerResolver) fetchAuthToken(registryHost, repoPath string) (string, 
 		return result.Token, nil
 	}
 	return result.AccessToken, nil
+}
+
+// splitRegistryAndRepo splits "registry.gitlab.com/group/image" into
+// ("registry.gitlab.com", "group/image"). Defaults to Docker Hub.
+func splitRegistryAndRepo(image string) (registryHost, repoPath string) {
+	parts := strings.SplitN(image, "/", 2)
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+		return parts[0], parts[1]
+	}
+	if !strings.Contains(image, "/") {
+		return dockerHubRegistry, "library/" + image
+	}
+	return dockerHubRegistry, image
 }

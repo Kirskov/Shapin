@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -13,9 +12,16 @@ import (
 )
 
 const (
-	FormatText = "text"
-	FormatJSON = "json"
+	FormatText  = "text"
+	FormatJSON  = "json"
 	FormatSARIF = "sarif"
+
+	filePerms = 0644
+
+	skipNodeModules = "node_modules"
+	skipGit         = ".git"
+	skipVendor      = "vendor"
+	skipDist        = "dist"
 )
 
 // Run is the main entrypoint: scans the project at cfg.Path and pins all refs.
@@ -104,14 +110,19 @@ func Run(cfg Config) error {
 // openOutput returns a writer for cfg.Output (a file path) or stdout,
 // plus a cleanup function to close the file if one was opened.
 func openOutput(path string) (io.Writer, func(), error) {
+	noop := func() { /* no file to close */ }
 	if path == "" {
-		return os.Stdout, func() { /* nothing to close */ }, nil
+		return os.Stdout, noop, nil
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 — path is user-supplied --output flag, intentional
 	if err != nil {
-		return nil, func() { /* nothing to close */ }, fmt.Errorf("opening output file: %w", err)
+		return nil, noop, fmt.Errorf("opening output file: %w", err)
 	}
-	return f, func() { f.Close() }, nil
+	return f, func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: closing output file: %v\n", err)
+		}
+	}, nil
 }
 
 // findWorkflowFiles returns all CI files matching any registered provider,
@@ -125,7 +136,7 @@ func findWorkflowFiles(root string, providers []provider.Provider, exclude []str
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == "node_modules" || name == ".git" || name == "vendor" || name == "dist" {
+			if name == skipNodeModules || name == skipGit || name == skipVendor || name == skipDist {
 				return filepath.SkipDir
 			}
 			return nil
@@ -167,6 +178,18 @@ func isExcluded(relPath string, patterns []string) bool {
 	return false
 }
 
+// matchProvider returns the first provider that matches the file's relative path.
+func matchProvider(path, root string, providers []provider.Provider) (provider.Provider, error) {
+	rel, _ := filepath.Rel(root, path)
+	slashRel := filepath.ToSlash(rel)
+	for _, p := range providers {
+		if p.IsMatch(slashRel) {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("no provider matched %s", path)
+}
+
 // processOpts groups the options passed to processFile.
 type processOpts struct {
 	dryRun     bool
@@ -179,42 +202,38 @@ type processOpts struct {
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
 // Returns a non-nil *FileChange if anything changed, nil if content was already pinned.
 func processFile(path, root string, providers []provider.Provider, opts processOpts) (*FileChange, error) {
-	rel, _ := filepath.Rel(root, path)
-	slashRel := filepath.ToSlash(rel)
-
-	var matched provider.Provider
-	for _, p := range providers {
-		if p.IsMatch(slashRel) {
-			matched = p
-			break
-		}
-	}
-	if matched == nil {
-		return nil, fmt.Errorf("no provider matched %s", path)
+	if err := assertWithinRoot(path, root); err != nil {
+		return nil, err
 	}
 
-	original, err := os.ReadFile(path)
+	matched, err := matchProvider(path, root, providers)
 	if err != nil {
 		return nil, err
 	}
 
-	updated, err := matched.Resolve(string(original), opts.pinActions, opts.pinImages)
+	raw, err := os.ReadFile(path) // #nosec G304 — path validated by assertWithinRoot
+	if err != nil {
+		return nil, err
+	}
+	original := string(raw)
+
+	updated, err := matched.Resolve(original, opts.pinActions, opts.pinImages)
 	if err != nil {
 		return nil, err
 	}
 
-	if updated == string(original) {
+	if updated == original {
 		return nil, nil
 	}
 
-	fc := collectChanges(path, string(original), updated)
+	fc := collectChanges(path, original, updated)
 
 	if opts.format == FormatText {
-		printDiff(opts.out, path, string(original), updated)
+		printDiff(opts.out, path, original, updated)
 	}
 
 	if !opts.dryRun {
-		if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(updated), filePerms); err != nil { // #nosec G703,G306 — path validated by assertWithinRoot; filePerms is 0644
 			return nil, err
 		}
 		if opts.format == FormatText {
@@ -255,26 +274,12 @@ var (
 func printDiff(out io.Writer, path, original, updated string) {
 	fmt.Fprintf(out, "\n%s%s--- %s%s\n", colorBold, colorCyan, path, colorReset)
 	fmt.Fprintf(out, "%s%s+++ %s (pinned)%s\n", colorBold, colorCyan, path, colorReset)
-
-	origLines := strings.Split(original, "\n")
-	updLines := strings.Split(updated, "\n")
-
-	maxLen := max(len(origLines), len(updLines))
-	for i := range maxLen {
-		var o, u string
-		if i < len(origLines) {
-			o = origLines[i]
+	diffLines(original, updated, func(o, u string) {
+		if o != "" {
+			fmt.Fprintf(out, "%s-%s%s\n", colorRed, o, colorReset)
 		}
-		if i < len(updLines) {
-			u = updLines[i]
+		if u != "" {
+			fmt.Fprintf(out, "%s+%s%s\n", colorGreen, u, colorReset)
 		}
-		if o != u {
-			if i < len(origLines) {
-				fmt.Fprintf(out, "%s-%s%s\n", colorRed, o, colorReset)
-			}
-			if i < len(updLines) {
-				fmt.Fprintf(out, "%s+%s%s\n", colorGreen, u, colorReset)
-			}
-		}
-	}
+	})
 }
