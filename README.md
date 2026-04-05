@@ -52,6 +52,32 @@ chmod +x digestify-my-ci
 sudo mv digestify-my-ci /usr/local/bin/
 ```
 
+### Docker
+
+Images are published to GHCR and available for `linux/amd64` and `linux/arm64`. Always reference by digest, not tag:
+
+```sh
+docker run --rm -v $(pwd):/repo ghcr.io/kirskov/digestify-my-ci@sha256:2018a811cb40e0261c36f5c1099ed177271a1580a5f7bc85ba781345c88c2b32 # v0.7.6 --path /repo
+```
+
+Apply changes (disable dry-run):
+
+```sh
+docker run --rm -v $(pwd):/repo ghcr.io/kirskov/digestify-my-ci@sha256:2018a811cb40e0261c36f5c1099ed177271a1580a5f7bc85ba781345c88c2b32 # v0.7.6 --path /repo --dry-run=false
+```
+
+With API tokens:
+
+```sh
+docker run --rm \
+  -v $(pwd):/repo \
+  -e GITHUB_TOKEN=ghp_xxx \
+  -e GITLAB_TOKEN=glpat_xxx \
+  ghcr.io/kirskov/digestify-my-ci@sha256:2018a811cb40e0261c36f5c1099ed177271a1580a5f7bc85ba781345c88c2b32 # v0.7.6 --path /repo
+```
+
+The digest for each release is listed on the [releases page](https://github.com/Kirskov/Digestify-My-Ci/releases). Update the digest when upgrading to a new version.
+
 ### Build from source
 
 ```sh
