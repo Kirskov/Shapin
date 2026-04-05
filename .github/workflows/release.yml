@@ -20,17 +20,23 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install UPX
+        run: sudo apt-get install -y upx-ucl
+
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF_NAME}
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%dT%H:%M')
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.Date=${DATE}"
-          GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-amd64   .
-          GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-arm64   .
-          GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-amd64  .
-          GOOS=darwin  GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-arm64  .
-          GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/digestify-my-ci-windows-amd64.exe .
+          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-amd64   .
+          GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o dist/digestify-my-ci-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o dist/digestify-my-ci-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/digestify-my-ci-windows-amd64.exe .
+          upx --best dist/digestify-my-ci-linux-amd64
+          upx --best dist/digestify-my-ci-linux-arm64
+          upx --best dist/digestify-my-ci-windows-amd64.exe
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
