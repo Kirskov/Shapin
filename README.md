@@ -46,7 +46,7 @@ Download the binary for your platform from the [releases page](https://github.co
 
 ```sh
 # Example for Linux amd64
-curl -fsSL https://github.com/Kirskov/Digestify-My-Ci/releases/download/v0.6.0/digestify-my-ci-linux-amd64 -o digestify-my-ci
+curl -fsSL https://github.com/Kirskov/Digestify-My-Ci/releases/download/v0.6.3/digestify-my-ci-linux-amd64 -o digestify-my-ci
 gh attestation verify digestify-my-ci --repo Kirskov/Digestify-My-Ci
 chmod +x digestify-my-ci
 sudo mv digestify-my-ci /usr/local/bin/
