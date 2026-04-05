@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"pintosha/provider"
+	"pintosha/providers"
 )
 
 const (
@@ -32,15 +33,15 @@ func Run(cfg Config) error {
 	}
 	defer closeOut()
 
-	providers := []provider.Provider{
-		newGitHubResolver(cfg.GitHubToken),
-		newGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
-		newForgejoResolver(cfg.ForgejoHost, cfg.ForgejoToken),
-		newCircleCIResolver(""),
-		newBitbucketResolver(),
+	providerList := []provider.Provider{
+		providers.NewGitHubResolver(cfg.GitHubToken),
+		providers.NewGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
+		providers.NewForgejoResolver(cfg.ForgejoHost, cfg.ForgejoToken),
+		providers.NewCircleCIResolver(""),
+		providers.NewBitbucketResolver(),
 	}
 
-	files, err := findWorkflowFiles(cfg.Path, providers, cfg.Exclude)
+	files, err := findWorkflowFiles(cfg.Path, providerList, cfg.Exclude)
 	if err != nil {
 		return fmt.Errorf("scanning path: %w", err)
 	}
@@ -70,7 +71,7 @@ func Run(cfg Config) error {
 		go func(f string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fc, err := processFile(f, cfg.Path, providers, processOpts{
+			fc, err := processFile(f, cfg.Path, providerList, processOpts{
 					dryRun:     cfg.DryRun,
 					pinActions: cfg.PinActions,
 					pinImages:  cfg.PinImages,
@@ -244,43 +245,17 @@ func processFile(path, root string, providers []provider.Provider, opts processO
 	return &fc, nil
 }
 
-// isTTY reports whether stdout is an interactive terminal.
-func isTTY() bool {
-	fi, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
-}
-
-const (
-	ansiReset  = "\033[0m"
-	ansiRed    = "\033[31m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiCyan   = "\033[36m"
-	ansiBold   = "\033[1m"
-)
-
-// ansi returns the escape code only when stdout is a TTY.
-func ansi(code string) string {
-	if isTTY() {
-		return code
-	}
-	return ""
-}
-
 // printDiff prints a colored unified-style diff of the changes.
 func printDiff(out io.Writer, path, original, updated string) {
-	reset := ansi(ansiReset)
-	fmt.Fprintf(out, "\n%s%s--- %s%s\n", ansi(ansiBold), ansi(ansiCyan), path, reset)
-	fmt.Fprintf(out, "%s%s+++ %s (pinned)%s\n", ansi(ansiBold), ansi(ansiCyan), path, reset)
+	reset := providers.Ansi(providers.AnsiReset)
+	fmt.Fprintf(out, "\n%s%s--- %s%s\n", providers.Ansi(providers.AnsiBold), providers.Ansi(providers.AnsiCyan), path, reset)
+	fmt.Fprintf(out, "%s%s+++ %s (pinned)%s\n", providers.Ansi(providers.AnsiBold), providers.Ansi(providers.AnsiCyan), path, reset)
 	diffLines(original, updated, func(o, u string) {
 		if o != "" {
-			fmt.Fprintf(out, "%s-%s%s\n", ansi(ansiRed), o, reset)
+			fmt.Fprintf(out, "%s-%s%s\n", providers.Ansi(providers.AnsiRed), o, reset)
 		}
 		if u != "" {
-			fmt.Fprintf(out, "%s+%s%s\n", ansi(ansiGreen), u, reset)
+			fmt.Fprintf(out, "%s+%s%s\n", providers.Ansi(providers.AnsiGreen), u, reset)
 		}
 	})
 }

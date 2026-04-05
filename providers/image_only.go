@@ -1,4 +1,4 @@
-package scanner
+package providers
 
 import "net/http"
 

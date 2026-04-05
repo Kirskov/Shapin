@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"pintosha/providers"
 	"pintosha/scanner"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	githubToken := flag.String("github-token", os.Getenv("GITHUB_TOKEN"), "GitHub API token")
 	gitlabToken := flag.String("gitlab-token", os.Getenv("GITLAB_TOKEN"), "GitLab API token")
 	gitlabHost := flag.String("gitlab-host", "https://gitlab.com", "GitLab host URL")
-	forgejoHost := flag.String("forgejo-host", "", "Forgejo instance URL (default: "+scanner.DefaultForgejoHost+")")
+	forgejoHost := flag.String("forgejo-host", "", "Forgejo instance URL (default: "+providers.DefaultForgejoHost+")")
 	forgejoToken := flag.String("forgejo-token", os.Getenv("FORGEJO_TOKEN"), "Forgejo API token")
 	pinActions := flag.Bool("pin-actions", true, "pin GitHub Actions uses: refs to SHAs")
 	pinImages := flag.Bool("pin-images", true, "pin Docker image: tags to digests")

@@ -1,4 +1,4 @@
-package scanner
+package providers
 
 import (
 	"encoding/json"
@@ -26,11 +26,11 @@ type githubResolver struct {
 	docker *dockerResolver
 }
 
-func newGitHubResolver(token string) *githubResolver {
-	return newGitHubResolverWithClient(token, newHTTPClient())
+func NewGitHubResolver(token string) *githubResolver {
+	return NewGitHubResolverWithClient(token, newHTTPClient())
 }
 
-func newGitHubResolverWithClient(token string, client *http.Client) *githubResolver {
+func NewGitHubResolverWithClient(token string, client *http.Client) *githubResolver {
 	return &githubResolver{
 		token:  token,
 		client: client,

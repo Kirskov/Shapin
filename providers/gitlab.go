@@ -1,4 +1,4 @@
-package scanner
+package providers
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ type gitlabResolver struct {
 	docker *dockerResolver
 }
 
-func newGitLabResolver(host, token string) *gitlabResolver {
+func NewGitLabResolver(host, token string) *gitlabResolver {
 	return &gitlabResolver{
 		host:   host,
 		token:  token,

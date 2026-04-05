@@ -1,8 +1,8 @@
-package scanner
+package providers
 
 const bitbucketPipelinesBase = "bitbucket-pipelines"
 
-func newBitbucketResolver() *imageOnlyResolver {
+func NewBitbucketResolver() *imageOnlyResolver {
 	return &imageOnlyResolver{
 		providerName: "Bitbucket Pipelines",
 		matcher: func(p string) bool {

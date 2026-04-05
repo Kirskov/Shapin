@@ -1,4 +1,4 @@
-package scanner
+package providers
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ type forgejoResolver struct {
 	docker *dockerResolver
 }
 
-func newForgejoResolver(host, token string) *forgejoResolver {
+func NewForgejoResolver(host, token string) *forgejoResolver {
 	if host == "" {
 		host = DefaultForgejoHost
 	}
