@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"pintosha/contract"
 	"pintosha/providers"
 )
 
@@ -93,7 +94,7 @@ func TestFindWorkflowFiles(t *testing.T) {
 	}
 	writeFile(t, dir+"/node_modules/.bin/ci.yml", "should be skipped\n")
 
-	pl := []providers.Provider{
+	pl := []contract.Provider{
 		providers.NewGitHubResolver(""),
 		providers.NewGitLabResolver(gitlabCom, ""),
 	}
@@ -141,7 +142,7 @@ func TestFindWorkflowFilesExclude(t *testing.T) {
 	writeFile(t, ghDir+ciYML, checkoutV4Line)
 	writeFile(t, ghDir+"/release.yml", checkoutV4Line)
 
-	pl := []providers.Provider{providers.NewGitHubResolver("")}
+	pl := []contract.Provider{providers.NewGitHubResolver("")}
 	files, err := findWorkflowFiles(dir, pl, []string{".github/workflows/release.yml"})
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +169,7 @@ func TestRunnerDryRun(t *testing.T) {
 	original := checkoutV4Line
 	writeFile(t, ghDir+ciYML, original)
 
-	pl := []providers.Provider{
+	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 		providers.NewGitLabResolver(gitlabCom, ""),
 	}
@@ -201,7 +202,7 @@ func TestRunnerAppliesChanges(t *testing.T) {
 	}
 	writeFile(t, ghDir+ciYML, checkoutV4Line)
 
-	pl := []providers.Provider{
+	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 		providers.NewGitLabResolver(gitlabCom, ""),
 	}
@@ -240,7 +241,7 @@ func TestRunnerConcurrency(t *testing.T) {
 			fmt.Sprintf("      - uses: actions/checkout@%s\n", ref))
 	}
 
-	pl := []providers.Provider{
+	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 		providers.NewGitLabResolver(gitlabCom, ""),
 	}

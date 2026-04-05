@@ -1,4 +1,7 @@
-package providers
+// Package contract defines the extension point for CI/CD file formats.
+// Implement the Provider interface to add support for a new provider
+// without modifying any existing code.
+package contract
 
 // Provider is the interface that every CI/CD provider must implement.
 type Provider interface {
