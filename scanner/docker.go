@@ -47,16 +47,11 @@ func (d *dockerResolver) resolveImages(content string) string {
 // warnIfDrifted checks already-pinned image digests and warns if the tag now
 // resolves to a different digest. The file is never modified.
 func (d *dockerResolver) warnIfDrifted(content string) {
-	for _, parts := range dockerPinnedRegex.FindAllStringSubmatch(content, -1) {
-		image, pinnedDigest, tag := parts[1], parts[2], parts[3]
-		currentDigest, err := d.fetchDigest(image, tag)
-		if err != nil {
-			continue
-		}
-		if currentDigest != pinnedDigest {
-			warnDrift("image", image, tag, pinnedDigest, currentDigest)
-		}
-	}
+	(&driftChecker{
+		pinnedRegex: dockerPinnedRegex,
+		kind:        "image",
+		resolve:     d.fetchDigest,
+	}).checkAll(content)
 }
 
 func (d *dockerResolver) pinImage(match string) string {

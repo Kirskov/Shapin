@@ -193,16 +193,11 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 // warnIfDrifted checks already-pinned component refs and warns if the SHA has
 // changed. The file is never modified — the user must fix it manually.
 func (r *gitlabResolver) warnIfDrifted(content string) {
-	for _, parts := range gitlabPinnedRegex.FindAllStringSubmatch(content, -1) {
-		component, pinnedSHA, tag := parts[1], parts[2], parts[3]
-		currentSHA, err := r.fetchComponentSHA(component, tag)
-		if err != nil {
-			continue
-		}
-		if currentSHA != pinnedSHA {
-			warnDrift("ref", component, tag, pinnedSHA, currentSHA)
-		}
-	}
+	(&driftChecker{
+		pinnedRegex: gitlabPinnedRegex,
+		kind:        "ref",
+		resolve:     r.fetchComponentSHA,
+	}).checkAll(content)
 }
 
 // fetchComponentSHA resolves a GitLab CI component ref to a commit SHA.

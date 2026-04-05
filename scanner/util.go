@@ -87,6 +87,38 @@ func warnDrift(kind, ref, tag, pinnedSHA, currentSHA string) {
 		ansi(ansiBold), ansi(ansiYellow), ref, tag, kind, ansi(ansiReset), pinnedSHA, currentSHA)
 }
 
+// driftChecker checks already-pinned refs for SHA drift.
+// Use checkAll to scan content for all matches of pinnedRegex and warn for any
+// whose current SHA no longer matches the pinned one.
+type driftChecker struct {
+	// pinnedRegex must have 3 capture groups: (ref, pinnedSHA, tag)
+	pinnedRegex *regexp.Regexp
+	// kind is a human-readable label used in the warning message (e.g. "tag", "image")
+	kind string
+	// resolve fetches the current SHA for the given ref and tag
+	resolve func(ref, tag string) (string, error)
+	// repoPath optionally transforms the ref before passing it to resolve
+	repoPath func(ref string) string
+}
+
+// checkAll scans content for pinned refs and warns about any that have drifted.
+func (d *driftChecker) checkAll(content string) {
+	for _, parts := range d.pinnedRegex.FindAllStringSubmatch(content, -1) {
+		ref, pinnedSHA, tag := parts[1], parts[2], parts[3]
+		lookupRef := ref
+		if d.repoPath != nil {
+			lookupRef = d.repoPath(ref)
+		}
+		currentSHA, err := d.resolve(lookupRef, tag)
+		if err != nil {
+			continue
+		}
+		if currentSHA != pinnedSHA {
+			warnDrift(d.kind, ref, tag, pinnedSHA, currentSHA)
+		}
+	}
+}
+
 // actionRepoPath extracts "owner/repo" from an action path like "owner/repo/subdir".
 func actionRepoPath(action string) string {
 	return strings.Join(strings.SplitN(action, "/", 3)[:2], "/")
