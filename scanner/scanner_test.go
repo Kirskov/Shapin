@@ -322,9 +322,12 @@ func TestGitHubResolverPinsActions(t *testing.T) {
 }
 
 func TestGitHubResolverSkipsAlreadyPinned(t *testing.T) {
-	r := newGitHubResolver("")
-	sha := "aabbccdd11223344556677889900aabbccdd1100"
-	content := fmt.Sprintf("      - uses: actions/checkout@%s # v4\n", sha)
+	// Fake server returns the same SHA — no drift, content must be unchanged.
+	srv := newFakeGitHubServer(map[string]string{"v4": testFakeSHA})
+	defer srv.Close()
+
+	r := newGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)})
+	content := fmt.Sprintf("      - uses: actions/checkout@%s # v4\n", testFakeSHA)
 
 	got, err := r.Resolve(content, true, false)
 	if err != nil {
@@ -707,18 +710,29 @@ func TestGitLabResolverPinsInputTAGKeys(t *testing.T) {
 }
 
 func TestGitLabResolverSkipsNonTAGInputKeys(t *testing.T) {
+	// Use a key name that has no "TAG" — resolveComponentInputs must skip it.
+	// The value uses a key name "image" which is not a TAG key.
+	// No network calls should be made for input pinning, but resolveImages
+	// would normally try — use a fake server that returns 404 to keep it offline.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
 	r := newGitLabResolver(gitlabCom, "")
+	r.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
 	content := `include:
   - component: gitlab.com/group/project/trivy@v1.0
     inputs:
-      image: myregistry.example.com/trivy:0.48.0
+      IMAGE_NAME: myregistry.example.com/trivy:0.48.0
       version: 1.2.3
 `
 	got, err := r.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Neither key contains TAG — nothing should be pinned via input logic
+	// IMAGE_NAME contains no TAG — nothing should be pinned via input logic
 	if strings.Contains(got, "sha256:") {
 		t.Errorf("expected no digest in non-TAG inputs, got:\n%s", got)
 	}
