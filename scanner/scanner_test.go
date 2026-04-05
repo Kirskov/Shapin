@@ -231,15 +231,9 @@ func TestRunnerConcurrency(t *testing.T) {
 	if err := os.MkdirAll(ghDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+
 	const numFiles = 20
-	for i := range numFiles {
-		ref := "v4"
-		if i%2 == 0 {
-			ref = "v3"
-		}
-		writeFile(t, fmt.Sprintf("%s/workflow_%d.yml", ghDir, i),
-			fmt.Sprintf("      - uses: actions/checkout@%s\n", ref))
-	}
+	createWorkflowFiles(t, ghDir, numFiles)
 
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
@@ -253,6 +247,28 @@ func TestRunnerConcurrency(t *testing.T) {
 		t.Fatalf("expected %d files, got %d", numFiles, len(files))
 	}
 
+	anyChanged := processFilesConcurrently(t, files, dir, pl)
+	if !anyChanged {
+		t.Error("expected at least one file to change")
+	}
+
+	assertFilesPinned(t, ghDir, numFiles, testFakeSHA)
+}
+
+func createWorkflowFiles(t *testing.T, ghDir string, n int) {
+	t.Helper()
+	for i := range n {
+		ref := "v4"
+		if i%2 == 0 {
+			ref = "v3"
+		}
+		writeFile(t, fmt.Sprintf("%s/workflow_%d.yml", ghDir, i),
+			fmt.Sprintf("      - uses: actions/checkout@%s\n", ref))
+	}
+}
+
+func processFilesConcurrently(t *testing.T, files []string, root string, pl []contract.Provider) bool {
+	t.Helper()
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
 	var anyChanged atomic.Bool
@@ -262,7 +278,7 @@ func TestRunnerConcurrency(t *testing.T) {
 		go func(path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fc, err := processFile(path, dir, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
+			fc, err := processFile(path, root, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 			if err != nil {
 				t.Errorf("processFile(%s): %v", path, err)
 				return
@@ -273,15 +289,17 @@ func TestRunnerConcurrency(t *testing.T) {
 		}(f)
 	}
 	wg.Wait()
-	if !anyChanged.Load() {
-		t.Error("expected at least one file to change")
-	}
-	for i := range numFiles {
+	return anyChanged.Load()
+}
+
+func assertFilesPinned(t *testing.T, ghDir string, n int, sha string) {
+	t.Helper()
+	for i := range n {
 		data, err := os.ReadFile(fmt.Sprintf("%s/workflow_%d.yml", ghDir, i))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), testFakeSHA) {
+		if !strings.Contains(string(data), sha) {
 			t.Errorf("file %d was not pinned: %s", i, string(data))
 		}
 	}
