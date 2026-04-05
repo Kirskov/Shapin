@@ -68,6 +68,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Set image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/digestify-my-ci" >> "$GITHUB_ENV"
+
       - name: Log in to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
         with:
@@ -85,8 +88,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/digestify-my-ci:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/digestify-my-ci:latest
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
