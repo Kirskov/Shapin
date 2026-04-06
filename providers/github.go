@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	githubJSONAccept    = "application/vnd.github+json"
-	githubWorkflowsDir  = ".github/workflows"
+	githubAPIBase      = "https://api.github.com"
+	githubJSONAccept   = "application/vnd.github+json"
+	githubWorkflowsDir = ".github/workflows"
 )
 
 // githubActionRegex matches `uses: owner/repo@ref` or `uses: owner/repo/subdir@ref`
@@ -83,7 +84,7 @@ func (r *githubResolver) fetchSHA(repo, ref string) (string, error) {
 	}
 
 	// Fall back to branch or commit SHA
-	url := fmt.Sprintf("https://api.github.com/repos/%s/commits/%s", repo, ref)
+	url := fmt.Sprintf("%s/repos/%s/commits/%s", githubAPIBase, repo, ref)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -117,7 +118,7 @@ func (r *githubResolver) fetchSHA(repo, ref string) (string, error) {
 }
 
 func (r *githubResolver) fetchTagSHA(repo, tag string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/git/refs/tags/%s", repo, tag)
+	url := fmt.Sprintf("%s/repos/%s/git/refs/tags/%s", githubAPIBase, repo, tag)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
