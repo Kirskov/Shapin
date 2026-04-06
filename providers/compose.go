@@ -14,11 +14,12 @@ func NewComposeResolver() *imageOnlyResolver {
 		providerName: "Docker Compose",
 		matcher: func(p string) bool {
 			base := slashBase(p)
-			return base == "docker-compose.yml" ||
-				base == "docker-compose.yaml" ||
-				base == "compose.yml" ||
-				base == "compose.yaml" ||
-				(strings.HasPrefix(base, "docker-compose.") && isYAML(base))
+			return matchesAny(base,
+				"docker-compose.yml",
+				"docker-compose.yaml",
+				"compose.yml",
+				"compose.yaml",
+			) || (strings.HasPrefix(base, "docker-compose.") && isYAML(base))
 		},
 		docker: newDockerResolver(""),
 	}

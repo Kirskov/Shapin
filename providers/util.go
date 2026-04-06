@@ -199,6 +199,16 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: httpTimeout}
 }
 
+// matchesAny returns true if s equals any element in the list.
+func matchesAny(s string, list ...string) bool {
+	for _, v := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
 func isYAML(name string) bool {
 	return strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")
 }
