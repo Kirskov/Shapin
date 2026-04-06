@@ -7,7 +7,8 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | Reference type | Before | After |
 |---|---|---|
 | GitHub Action | `uses: actions/checkout@v4` | `uses: actions/checkout@abc1234... # v4` |
-| Docker image | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # 2.2.1` |
+| Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # 2.2.1` |
+| Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
 | GitLab component | `component: gitlab.com/group/project/comp@v1` | `component: gitlab.com/group/project/comp@abc1234... # v1` |
 | GitLab TAG input | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
 | GitLab TAG variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
@@ -28,6 +29,8 @@ The tool scans recursively under `--path`, skipping `node_modules`, `.git`, `ven
 - **Woodpecker CI**:
   - `.woodpecker.yml` / `.woodpecker.yaml` at the root
   - Any `.yml`/`.yaml` file inside `.woodpecker/` and its subdirectories
+- **Dockerfiles**: `Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `*.Dockerfile` (at any depth) — pins `FROM image:tag` lines
+- **Docker Compose**: `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `compose.yml`, `compose.yaml`
 
 ## Installation
 

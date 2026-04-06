@@ -593,6 +593,147 @@ func TestWoodpeckerSkipsWhenPinImagesFalse(t *testing.T) {
 	}
 }
 
+// ── Dockerfile ────────────────────────────────────────────────────────────────
+
+func TestIsDockerfile(t *testing.T) {
+	p := NewDockerfileResolver()
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"Dockerfile", true},
+		{"Dockerfile.prod", true},
+		{"service.dockerfile", true},
+		{"service.Dockerfile", true},
+		{"docker-compose.yml", false},
+		{ghWorkflowCI, false},
+		{"src/Dockerfile", true},
+	}
+	for _, c := range cases {
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("Dockerfile IsMatch(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestDockerfilePinsFrom(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:dockerfile01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewDockerfileResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := "FROM myregistry.example.com/myimage:1.0.0 AS builder\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:dockerfile01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 1.0.0") {
+		t.Errorf(wantTagAsComment, got)
+	}
+	// AS alias must be preserved
+	if !strings.Contains(got, "AS builder") {
+		t.Errorf("expected AS alias to be preserved, got:\n%s", got)
+	}
+}
+
+func TestDockerfileSkipsFromScratch(t *testing.T) {
+	p := NewDockerfileResolver()
+	content := "FROM scratch\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected FROM scratch to be skipped, got:\n%s", got)
+	}
+}
+
+func TestDockerfileSkipsWhenPinImagesFalse(t *testing.T) {
+	p := NewDockerfileResolver()
+	content := "FROM myregistry.example.com/myimage:1.0.0\n"
+	got, err := p.Resolve(content, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf(wantContentUnchanged, got)
+	}
+}
+
+// ── Docker Compose ────────────────────────────────────────────────────────────
+
+func TestIsDockerCompose(t *testing.T) {
+	p := NewComposeResolver()
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"docker-compose.yml", true},
+		{"docker-compose.yaml", true},
+		{"docker-compose.prod.yml", true},
+		{"compose.yml", true},
+		{"compose.yaml", true},
+		{"docker-compose-other.yml", false},
+		{ghWorkflowCI, false},
+		{"Dockerfile", false},
+	}
+	for _, c := range cases {
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("Compose IsMatch(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestComposePinsImages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:compose01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewComposeResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := "    image: myregistry.example.com/myimage:2.0.0\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:compose01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 2.0.0") {
+		t.Errorf(wantTagAsComment, got)
+	}
+}
+
+func TestComposeSkipsWhenPinImagesFalse(t *testing.T) {
+	p := NewComposeResolver()
+	content := "    image: myregistry.example.com/myimage:2.0.0\n"
+	got, err := p.Resolve(content, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf(wantContentUnchanged, got)
+	}
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func writeFile(t *testing.T, path, content string) {
