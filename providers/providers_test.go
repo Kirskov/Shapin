@@ -33,7 +33,8 @@ const (
 	manifestsPath      = "/manifests/"
 	dockerDigestHeader = "Docker-Content-Digest"
 	wantDigestInOutput = "expected digest in output, got:\n%s"
-	wantTagAsComment   = "expected original tag as comment, got:\n%s"
+	wantTagAsComment        = "expected original tag as comment, got:\n%s"
+	wantContentUnchanged    = "expected content unchanged when pinImages=false, got:\n%s"
 	wantSHAInOutput    = "expected SHA in output, got:\n%s"
 	gitRefsTagsPath    = "/git/refs/tags/"
 	commitsPath        = "/commits/"
@@ -166,7 +167,7 @@ func TestCircleCISkipsWhenPinImagesFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != content {
-		t.Errorf("expected content unchanged when pinImages=false, got:\n%s", got)
+		t.Errorf(wantContentUnchanged, got)
 	}
 }
 
@@ -313,7 +314,7 @@ func TestBitbucketPipelinesSkipsWhenPinImagesFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != content {
-		t.Errorf("expected content unchanged when pinImages=false, got:\n%s", got)
+		t.Errorf(wantContentUnchanged, got)
 	}
 }
 
@@ -526,6 +527,69 @@ func TestDoWithRetryExhausted(t *testing.T) {
 	_, err := doWithRetry(&http.Client{}, req)
 	if err == nil {
 		t.Error("expected error after exhausting retries")
+	}
+}
+
+// ── Woodpecker CI ─────────────────────────────────────────────────────────────
+
+func TestIsWoodpeckerCI(t *testing.T) {
+	p := NewWoodpeckerResolver()
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{".woodpecker.yml", true},
+		{".woodpecker.yaml", true},
+		{".woodpecker/build.yml", true},
+		{".woodpecker/deploy.yaml", true},
+		{".woodpecker/sub/pipeline.yml", true},
+		{".woodpecker-other.yml", false},
+		{ghWorkflowCI, false},
+		{gitlabCIYML, false},
+	}
+	for _, c := range cases {
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("Woodpecker IsMatch(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestWoodpeckerPinsImages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:woodpecker01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewWoodpeckerResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := "      image: myregistry.example.com/myimage:1.5.0\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:woodpecker01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 1.5.0") {
+		t.Errorf(wantTagAsComment, got)
+	}
+}
+
+func TestWoodpeckerSkipsWhenPinImagesFalse(t *testing.T) {
+	p := NewWoodpeckerResolver()
+	content := "      image: myregistry.example.com/myimage:1.5.0\n"
+	got, err := p.Resolve(content, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf(wantContentUnchanged, got)
 	}
 }
 

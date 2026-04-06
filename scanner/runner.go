@@ -39,6 +39,7 @@ func Run(cfg Config) error {
 		providers.NewForgejoResolver(cfg.ForgejoHost, cfg.ForgejoToken),
 		providers.NewCircleCIResolver(""),
 		providers.NewBitbucketResolver(),
+		providers.NewWoodpeckerResolver(),
 	}
 
 	files, err := findWorkflowFiles(cfg.Path, providerList, cfg.Exclude)
