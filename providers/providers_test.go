@@ -605,9 +605,11 @@ func TestIsDockerfile(t *testing.T) {
 		{"Dockerfile.prod", true},
 		{"service.dockerfile", true},
 		{"service.Dockerfile", true},
+		{"services/app/Dockerfile", true},
+		{"infra/docker/Dockerfile.prod", true},
+		{"a/b/c/Dockerfile", true},
 		{"docker-compose.yml", false},
 		{ghWorkflowCI, false},
-		{"src/Dockerfile", true},
 	}
 	for _, c := range cases {
 		if got := p.IsMatch(c.path); got != c.want {
@@ -684,6 +686,9 @@ func TestIsDockerCompose(t *testing.T) {
 		{"docker-compose.prod.yml", true},
 		{"compose.yml", true},
 		{"compose.yaml", true},
+		{"infra/docker-compose.yml", true},
+		{"deploy/prod/docker-compose.override.yml", true},
+		{"services/compose.yaml", true},
 		{"docker-compose-other.yml", false},
 		{ghWorkflowCI, false},
 		{"Dockerfile", false},
