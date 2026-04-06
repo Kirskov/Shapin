@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	DefaultForgejoHost    = "https://codeberg.org"
-	forgejoWorkflowsDir   = ".forgejo/workflows"
+	DefaultForgejoHost  = "https://codeberg.org"
+	forgejoActionsHost  = "https://code.forgejo.org"
+	forgejoWorkflowsDir = ".forgejo/workflows"
 )
 
 type forgejoResolver struct {
@@ -68,11 +69,18 @@ func (r *forgejoResolver) pinActions(content string) (string, error) {
 	return (&actionPinner{name: "Forgejo", cache: r.cache, resolve: r.fetchSHA}).pin(content)
 }
 
-// fetchSHA tries tag first, then falls back to branch/commit.
+// fetchSHA tries the configured host first, then falls back to data.forgejo.org
+// (the default Forgejo actions registry) for short refs like actions/checkout.
 func (r *forgejoResolver) fetchSHA(repo, ref string) (string, error) {
-	sha, err := r.fetchTagSHA(repo, ref)
+	sha, err := r.fetchTagSHA(r.host, repo, ref)
 	if err == nil {
 		return sha, nil
+	}
+	// Fall back to the Forgejo actions registry for community actions.
+	if r.host != forgejoActionsHost {
+		if sha, err2 := r.fetchTagSHA(forgejoActionsHost, repo, ref); err2 == nil {
+			return sha, nil
+		}
 	}
 	url := fmt.Sprintf("%s/api/v1/repos/%s/commits/%s", r.host, repo, ref)
 	req, err := http.NewRequest("GET", url, nil)
@@ -102,8 +110,8 @@ func (r *forgejoResolver) fetchSHA(repo, ref string) (string, error) {
 	return result.SHA, nil
 }
 
-func (r *forgejoResolver) fetchTagSHA(repo, tag string) (string, error) {
-	url := fmt.Sprintf("%s/api/v1/repos/%s/git/refs/tags/%s", r.host, repo, tag)
+func (r *forgejoResolver) fetchTagSHA(host, repo, tag string) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/git/refs/tags/%s", host, repo, tag)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
