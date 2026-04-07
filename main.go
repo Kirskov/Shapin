@@ -26,7 +26,7 @@ func main() {
 	gitlabHost := flag.String("gitlab-host", "https://gitlab.com", "GitLab host URL")
 	forgejoHost := flag.String("forgejo-host", "", "Forgejo instance URL (default: "+providers.DefaultForgejoHost+")")
 	forgejoToken := flag.String("forgejo-token", os.Getenv("FORGEJO_TOKEN"), "Forgejo API token")
-	pinActions := flag.Bool("pin-actions", true, "pin GitHub Actions uses: refs to SHAs")
+	pinActions := flag.Bool("pin-refs", true, "pin CI component/action refs to SHAs")
 	pinImages := flag.Bool("pin-images", true, "pin Docker image: tags to digests")
 	exclude := flag.String("exclude", "", "comma-separated glob patterns to exclude (e.g. '.github/workflows/skip.yml')")
 	output := flag.String("output", "", "write output to file instead of stdout")

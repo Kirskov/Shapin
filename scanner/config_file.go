@@ -7,25 +7,26 @@ import (
 	"os"
 )
 
-const defaultConfigFile = ".digestify.json"
+const defaultConfigFile = ".shapin.json"
 
-// ConfigFile is the structure of a .digestify.json config file.
+// ConfigFile is the structure of a .shapin.json config file.
 // All fields are optional; CLI flags take precedence over file values.
 type ConfigFile struct {
-	Path         *string  `json:"path"`
-	DryRun       *bool    `json:"dry-run"`
-	GitHubToken  *string  `json:"github-token"`
-	GitLabToken  *string  `json:"gitlab-token"`
-	GitLabHost   *string  `json:"gitlab-host"`
-	ForgejoHost  *string  `json:"forgejo-host"`
-	ForgejoToken *string  `json:"forgejo-token"`
-	PinActions   *bool    `json:"pin-actions"`
-	PinImages    *bool    `json:"pin-images"`
-	Exclude      []string `json:"exclude"`
+	Path         *string           `json:"path"`
+	DryRun       *bool             `json:"dry-run"`
+	GitHubToken  *string           `json:"github-token"`
+	GitLabToken  *string           `json:"gitlab-token"`
+	GitLabHost   *string           `json:"gitlab-host"`
+	ForgejoHost  *string           `json:"forgejo-host"`
+	ForgejoToken *string           `json:"forgejo-token"`
+	PinActions   *bool             `json:"pin-refs"`
+	PinImages    *bool             `json:"pin-images"`
+	Exclude      []string          `json:"exclude"`
+	TagMappings  map[string]string `json:"tag-mappings"`
 }
 
-// LoadConfigFile reads a .digestify.json file from the given path.
-// If path is empty it looks for .digestify.json in the current directory.
+// LoadConfigFile reads a .shapin.json file from the given path.
+// If path is empty it looks for .shapin.json in the current directory.
 func LoadConfigFile(path string) (*ConfigFile, error) {
 	if path == "" {
 		path = defaultConfigFile
@@ -60,10 +61,13 @@ func (f *ConfigFile) ApplyTo(cfg *Config, set map[string]bool) {
 	applyString(f.GitLabHost, &cfg.GitLabHost, set["gitlab-host"])
 	applyString(f.ForgejoHost, &cfg.ForgejoHost, set["forgejo-host"])
 	applyString(f.ForgejoToken, &cfg.ForgejoToken, set["forgejo-token"])
-	applyBool(f.PinActions, &cfg.PinActions, set["pin-actions"])
+	applyBool(f.PinActions, &cfg.PinActions, set["pin-refs"])
 	applyBool(f.PinImages, &cfg.PinImages, set["pin-images"])
 	if len(f.Exclude) > 0 && !set["exclude"] {
 		cfg.Exclude = f.Exclude
+	}
+	if len(f.TagMappings) > 0 {
+		cfg.TagMappings = f.TagMappings
 	}
 }
 

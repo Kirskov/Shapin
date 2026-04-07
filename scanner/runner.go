@@ -35,7 +35,7 @@ func Run(cfg Config) error {
 
 	providerList := []contract.Provider{
 		providers.NewGitHubResolver(cfg.GitHubToken),
-		providers.NewGitLabResolver(cfg.GitLabHost, cfg.GitLabToken),
+		providers.NewGitLabResolver(cfg.GitLabHost, cfg.GitLabToken, cfg.TagMappings),
 		providers.NewForgejoResolver(cfg.ForgejoHost, cfg.ForgejoToken),
 		providers.NewCircleCIResolver(""),
 		providers.NewBitbucketResolver(),

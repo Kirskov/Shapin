@@ -9,9 +9,8 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | GitHub Action | `uses: actions/checkout@v4` | `uses: actions/checkout@abc1234... # v4` |
 | Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # 2.2.1` |
 | Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
-| GitLab component | `component: gitlab.com/group/project/comp@v1` | `component: gitlab.com/group/project/comp@abc1234... # v1` |
-| GitLab TAG input | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
-| GitLab TAG variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
+| GitLab TAG input | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_DIGEST: aquasec/trivy@sha256:eafae... # 0.69.3` |
+| GitLab mapped input | `TRIVY_VERSION: "0.69.3"` | `TRIVY_DIGEST: aquasec/trivy@sha256:eafae... # 0.69.3` |
 
 Already-pinned refs (SHA or digest) are left untouched.
 
@@ -112,17 +111,17 @@ shapin --path ./myproject
 # Apply changes
 shapin --path ./myproject --dry-run=false
 
-# Only pin Docker images, leave action refs alone
-shapin --path ./myproject --pin-actions=false
+# Only pin Docker images, leave refs alone
+shapin --path ./myproject --pin-refs=false
 
-# Only pin GitHub/GitLab action refs, leave images alone
+# Only pin CI refs, leave images alone
 shapin --path ./myproject --pin-images=false
 
 # Exclude specific files (comma-separated globs)
 shapin --path ./myproject --exclude ".github/workflows/generated.yml,*.skip.yml"
 
 # Use a config file
-shapin --config .digestify.json
+shapin --config .shapin.json
 
 # With API tokens (required to resolve unpinned action refs)
 shapin --path ./myproject --github-token ghp_xxx --gitlab-token glpat_xxx
@@ -137,10 +136,10 @@ shapin --path ./myproject --gitlab-host https://gitlab.mycompany.com --gitlab-to
 |---|---|---|
 | `--path` | `.` | Path to the project to scan |
 | `--dry-run` | `true` | Show diff without writing files |
-| `--pin-actions` | `true` | Pin `uses:` and `component:` refs to SHAs |
+| `--pin-refs` | `true` | Pin `uses:` and `component:` refs to SHAs |
 | `--pin-images` | `true` | Pin Docker `image:` tags to digests |
 | `--exclude` | — | Comma-separated glob patterns of files to skip |
-| `--config` | `.digestify.json` | Path to config file |
+| `--config` | `.shapin.json` | Path to config file |
 | `--github-token` | `$GITHUB_TOKEN` | GitHub API token |
 | `--gitlab-token` | `$GITLAB_TOKEN` | GitLab API token |
 | `--gitlab-host` | `https://gitlab.com` | GitLab instance URL |
@@ -151,19 +150,24 @@ Tokens can also be set via environment variables `GITHUB_TOKEN` and `GITLAB_TOKE
 
 ## Config file
 
-All flags can be set in a `.digestify.json` file at the root of your project. CLI flags always take precedence over the config file.
+All flags can be set in a `.shapin.json` file at the root of your project. CLI flags always take precedence over the config file.
 
 ```json
 {
   "dry-run": false,
-  "pin-actions": true,
+  "pin-refs": true,
   "pin-images": false,
   "github-token": "ghp_...",
   "gitlab-host": "https://gitlab.mycompany.com",
   "exclude": [
     ".github/workflows/generated.yml",
     ".gitlab/auto-*.yml"
-  ]
+  ],
+  "tag-mappings": {
+    "NODE_TAG": "node",
+    "TRIVY_VERSION": "aquasec/trivy",
+    "ALPINE_TAG": "alpine"
+  }
 }
 ```
 
@@ -180,21 +184,42 @@ All flags can be set in a `.digestify.json` file at the root of your project. CL
 
 API calls to GitHub and GitLab are automatically retried on HTTP 429 (rate limited) or 503 responses. The retry delay is read from the `Retry-After` or `X-RateLimit-Reset` headers, falling back to 60 seconds. Up to 3 retries are attempted before giving up.
 
-## GitLab TAG convention
+## GitLab input pinning
 
-For GitLab CI, image references inside `include[].inputs` and top-level `variables` are pinned when the key name contains `TAG` (case-insensitive). This convention avoids false positives on arbitrary string inputs.
+For GitLab CI, image references inside `include[].inputs`, `variables`, and `trigger.include[].inputs` are pinned in two ways:
+
+**1. Auto-detection — key contains `TAG` with `image:tag` value:**
 
 ```yaml
-# Pinned — key contains TAG
 variables:
-  TRIVY_TAG: aquasec/trivy:0.69.3       # → aquasec/trivy@sha256:... # 0.69.3
+  TRIVY_TAG: aquasec/trivy:0.69.3       # → TRIVY_DIGEST: aquasec/trivy@sha256:... # 0.69.3
 
 include:
   - component: gitlab.com/group/project/scanner@v1
     inputs:
-      SCANNER_TAG: myregistry.com/scanner:1.2.3  # → myregistry.com/scanner@sha256:... # 1.2.3
+      SCANNER_TAG: myregistry.com/scanner:1.2.3  # → SCANNER_DIGEST: myregistry.com/scanner@sha256:... # 1.2.3
       severity: HIGH                              # skipped — no TAG in key name
 ```
+
+**2. Mapped keys — plain version values via `tag-mappings` in `.shapin.json`:**
+
+```yaml
+# .shapin.json
+{
+  "tag-mappings": {
+    "NODE_VERSION": "node",
+    "TRIVY_VERSION": "aquasec/trivy"
+  }
+}
+```
+
+```yaml
+inputs:
+  NODE_VERSION: '24.13.0'    # → NODE_DIGEST: node@sha256:... # 24.13.0
+  TRIVY_VERSION: "0.69.3"   # → TRIVY_DIGEST: aquasec/trivy@sha256:... # 0.69.3
+```
+
+In both cases, the key suffix `_TAG` or `_VERSION` is renamed to `_DIGEST`.
 
 ## What it can't do
 
