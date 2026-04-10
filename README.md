@@ -232,8 +232,8 @@ Pins `uses: owner/repo@tag` refs to their commit SHA. Requires `--github-token` 
 
 Already-pinned refs (`@sha # tag`) are checked for drift — a warning is printed if the tag has been moved to a different commit.
 
-**Limitations:**
-- Branch refs (e.g. `@main`) are resolved to the current HEAD SHA, which will become stale over time — use tags when possible
+**Branch ref warning:**
+If a ref points to a well-known branch name (`main`, `master`, `develop`, `development`) or a common branch prefix (`feat/`, `fix/`, `bug/`, `hotfix/`, `feature/`, `bugfix/`, `release/`), a red warning is printed — the pinned SHA will become stale as the branch moves forward. Use a tag instead.
 
 ---
 
@@ -264,6 +264,9 @@ For **private components**, pass `--gitlab-token`. Without it a warning is print
 ```
 warn: GitLab component .../private-comp@v1.0.0: HTTP 404 — try --gitlab-token if this is a private component
 ```
+
+**Branch ref warning:**
+Same as GitHub Actions — if the component ref is a well-known branch name, a red warning is printed.
 
 #### Version inputs
 
@@ -338,6 +341,9 @@ Pins `uses: owner/repo@tag` refs to their commit SHA. Falls back to `code.forgej
 - uses: actions/checkout@v1
 # → - uses: actions/checkout@abc1234... # v1
 ```
+
+**Branch ref warning:**
+Same as GitHub Actions — a red warning is printed if the ref is a well-known branch name.
 
 ---
 

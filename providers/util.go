@@ -198,11 +198,27 @@ func replaceMatches(re *regexp.Regexp, content string, fn func(parts []string) (
 	})
 }
 
-// unstableBranches are well-known branch names that should never be pinned —
-// they move with every commit and will silently become stale.
-var unstableBranches = map[string]bool{
+// unstableBranchExact are well-known branch names matched exactly.
+var unstableBranchExact = map[string]bool{
 	"main": true, "master": true, "develop": true, "development": true,
-	"feat": true, "fix": true, "bug": true, "hotfix": true,
+}
+
+// unstableBranchPrefixes are branch prefixes matched with a slash separator,
+// e.g. "feat/my-feature", "fix/issue-123", "hotfix/urgent".
+var unstableBranchPrefixes = []string{"feat/", "fix/", "bug/", "hotfix/", "feature/", "bugfix/", "release/"}
+
+// isUnstableBranch returns true if ref looks like a mutable branch name.
+func isUnstableBranch(ref string) bool {
+	lower := strings.ToLower(ref)
+	if unstableBranchExact[lower] {
+		return true
+	}
+	for _, prefix := range unstableBranchPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // warnBranchRef prints a red warning when a ref resolves to a known branch name.
@@ -236,7 +252,7 @@ func (ap *actionPinner) pin(content string) (string, error) {
 		if isSHA(ref) {
 			return "", false
 		}
-		if unstableBranches[strings.ToLower(ref)] {
+		if isUnstableBranch(ref) {
 			warnBranchRef(ap.name, action, ref)
 		}
 		repoPath := actionRepoPath(action)
@@ -244,7 +260,7 @@ func (ap *actionPinner) pin(content string) (string, error) {
 			return ap.resolve(repoPath, ref)
 		})
 		if err != nil {
-			if unstableBranches[strings.ToLower(ref)] {
+			if isUnstableBranch(ref) {
 				// Non-fatal: branch may not exist on this repo, already warned above.
 				return "", false
 			}

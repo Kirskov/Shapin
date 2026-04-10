@@ -269,7 +269,7 @@ func (r *gitlabResolver) pinComponents(content string) (string, error) {
 			fmt.Println(msg)
 			return "", false
 		}
-		if unstableBranches[strings.ToLower(ref)] {
+		if isUnstableBranch(ref) {
 			warnBranchRef("GitLab", component, ref)
 		}
 		return fmt.Sprintf("%s%s@%s # %s", prefix, component, sha, ref), true
