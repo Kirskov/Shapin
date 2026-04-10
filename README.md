@@ -2,6 +2,32 @@
 
 Pin floating tags in CI workflow files to immutable SHAs, making your pipelines reproducible and immune to tag mutation attacks.
 
+## Table of contents
+
+- [What it does](#what-it-does)
+- [Supported files](#supported-files)
+- [Installation](#installation)
+  - [One-liner](#one-liner-linux--macos)
+  - [Manual](#manual)
+  - [Docker](#docker)
+  - [Build from source](#build-from-source)
+- [Usage](#usage)
+- [Upgrading pinned refs](#upgrading-pinned-refs)
+- [Flags](#flags)
+- [Config file](#config-file)
+- [Providers](#providers)
+  - [GitHub Actions](#github-actions)
+  - [GitLab CI](#gitlab-ci)
+  - [Forgejo Actions](#forgejo-actions)
+  - [CircleCI](#circleci)
+  - [Bitbucket Pipelines](#bitbucket-pipelines)
+  - [Woodpecker CI](#woodpecker-ci)
+  - [Dockerfile](#dockerfile)
+  - [Docker Compose](#docker-compose)
+- [When do you need a token?](#when-do-you-need-a-token)
+- [Rate limiting](#rate-limiting)
+- [What it can't do](#what-it-cant-do)
+
 ## What it does
 
 | Reference type | Before | After |
