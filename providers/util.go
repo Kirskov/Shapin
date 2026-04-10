@@ -41,7 +41,7 @@ func Ansi(code string) string {
 // Regex pattern constants — centralised so no pattern is duplicated across files.
 const (
 	patternSHA          = `^[0-9a-f]{40}$`
-	patternDockerImage  = `(image:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`
+	patternDockerImage  = `(?m)^([^#\n]*image:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`
 	patternDockerPinned = `image:\s+['"]?([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)['"]?\s+#\s+(\S+)`
 	patternFromLine     = `(?m)^(FROM\s+)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(\s|$)`
 	patternFromPinned   = `(?m)^FROM\s+([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s+#\s+(\S+)`
@@ -398,30 +398,49 @@ func doWithRetry(client *http.Client, req *http.Request) (*http.Response, error)
 	return nil, fmt.Errorf("unexpected retry loop exit")
 }
 
+const maxRetryDelay = 10 * time.Minute
+
 // retryDelay returns how long to wait before the next attempt.
 // It reads Retry-After (seconds or HTTP-date) and X-RateLimit-Reset (unix timestamp).
 func retryDelay(resp *http.Response) time.Duration {
 	const fallback = 60 * time.Second
-
-	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-		if secs, err := strconv.Atoi(retryAfter); err == nil {
-			return time.Duration(secs) * time.Second
-		}
-		if parsedTime, err := http.ParseTime(retryAfter); err == nil {
-			if delay := time.Until(parsedTime); delay > 0 {
-				return delay
-			}
-		}
+	if d, ok := parseRetryAfter(resp.Header.Get("Retry-After")); ok {
+		return d
 	}
-
-	if rateLimitReset := resp.Header.Get("X-RateLimit-Reset"); rateLimitReset != "" {
-		if unix, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
-			if delay := time.Until(time.Unix(unix, 0)); delay > 0 {
-				return delay
-			}
-		}
+	if d, ok := parseRateLimitReset(resp.Header.Get("X-RateLimit-Reset")); ok {
+		return d
 	}
-
 	return fallback
+}
+
+func parseRetryAfter(h string) (time.Duration, bool) {
+	if h == "" {
+		return 0, false
+	}
+	if secs, err := strconv.Atoi(h); err == nil {
+		d := time.Duration(secs) * time.Second
+		if d > maxRetryDelay {
+			d = maxRetryDelay
+		}
+		return d, true
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
+func parseRateLimitReset(h string) (time.Duration, bool) {
+	if h == "" {
+		return 0, false
+	}
+	if unix, err := strconv.ParseInt(h, 10, 64); err == nil {
+		if d := time.Until(time.Unix(unix, 0)); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
 }
 

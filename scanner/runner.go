@@ -181,18 +181,23 @@ func findWorkflowFiles(root string, providers []contract.Provider, exclude []str
 
 // isExcluded returns true if the relative path matches any of the exclude globs.
 func isExcluded(relPath string, patterns []string) bool {
+	base := filepath.Base(relPath)
 	for _, pattern := range patterns {
-		matched, err := filepath.Match(pattern, relPath)
-		if err == nil && matched {
-			return true
-		}
-		// Also match against just the filename for simple patterns like "*.yml"
-		matched, err = filepath.Match(pattern, filepath.Base(relPath))
-		if err == nil && matched {
+		if matchesGlob(pattern, relPath) || matchesGlob(pattern, base) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchesGlob returns true if name matches pattern, printing a warning for malformed patterns.
+func matchesGlob(pattern, name string) bool {
+	matched, err := filepath.Match(pattern, name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: invalid exclude pattern %q: %v\n", pattern, err)
+		return false
+	}
+	return matched
 }
 
 // matchProvider returns the first provider that matches the file's relative path.

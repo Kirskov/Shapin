@@ -151,6 +151,9 @@ func (r *githubResolver) fetchTagSHA(repo, tag string) (string, error) {
 
 	// Annotated tags point to a tag object, not the commit — dereference it
 	if result.Object.Type == "tag" {
+		if !strings.HasPrefix(result.Object.URL, githubAPIBase) {
+			return "", fmt.Errorf("unexpected tag object URL: %s", result.Object.URL)
+		}
 		return r.fetchTagObjectSHA(result.Object.URL)
 	}
 
