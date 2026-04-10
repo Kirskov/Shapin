@@ -109,6 +109,25 @@ func extractStem(key string) string {
 	return ""
 }
 
+// toDigestKey renames a version marker in a variable name to DIGEST,
+// preserving the original case pattern and position.
+// e.g. TF_VERSION → TF_DIGEST, VERSION_TF → DIGEST_TF, TF_TAG → TF_DIGEST
+func toDigestKey(key string) string {
+	upper := strings.ToUpper(key)
+	for _, marker := range versionMarkers {
+		if marker == "DIGEST" {
+			continue
+		}
+		if strings.HasSuffix(upper, "_"+marker) {
+			return key[:len(key)-len(marker)] + "DIGEST"
+		}
+		if strings.HasPrefix(upper, marker+"_") {
+			return "DIGEST" + key[len(marker):]
+		}
+	}
+	return key
+}
+
 // isSHA returns true if the string looks like a full git SHA or docker digest.
 func isSHA(s string) bool {
 	return shaRegex.MatchString(s) || strings.HasPrefix(s, "sha256:")

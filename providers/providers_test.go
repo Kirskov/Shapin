@@ -140,6 +140,9 @@ func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(got, "TF_DIGEST") {
+		t.Errorf("expected key renamed to TF_DIGEST, got:\n%s", got)
+	}
 	if !strings.Contains(got, "sha256:terraform01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
@@ -232,6 +235,26 @@ func digestForPath(path string, digests map[string]string) string {
 	return "sha256:fallback0"
 }
 
+func TestToDigestKey(t *testing.T) {
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{"TF_VERSION", "TF_DIGEST"},
+		{"TF_TAG", "TF_DIGEST"},
+		{"TF_DIGEST", "TF_DIGEST"}, // already DIGEST, unchanged
+		{"NODE_VERSION", "NODE_DIGEST"},
+		{"VERSION_TF", "DIGEST_TF"},
+		{"TAG_NODE", "DIGEST_NODE"},
+		{"NOMARKER", "NOMARKER"}, // no marker, unchanged
+	}
+	for _, c := range cases {
+		if got := toDigestKey(c.key); got != c.want {
+			t.Errorf("toDigestKey(%q) = %q, want %q", c.key, got, c.want)
+		}
+	}
+}
+
 func TestGitLabRealWorldComponentInputs(t *testing.T) {
 	// Each image gets a distinct digest so we can assert each one was resolved.
 	digests := map[string]string{
@@ -283,16 +306,25 @@ include:
 		t.Fatal(err)
 	}
 
-	// Version inputs must be pinned.
-	pinned := []struct{ key, version string }{
-		{"TF_VERSION", "1.13.5"},
-		{"TRIVY_VERSION", "0.69.1"},
-		{"NODE_VERSION", "24.13.0"},
-		{"ALPINE_VERSION", "3.23"},
+	// Version inputs must be renamed to DIGEST and pinned.
+	pinned := []struct{ digestKey, version string }{
+		{"TF_DIGEST", "1.13.5"},
+		{"TRIVY_DIGEST", "0.69.1"},
+		{"NODE_DIGEST", "24.13.0"},
+		{"ALPINE_DIGEST", "3.23"},
 	}
 	for _, c := range pinned {
+		if !strings.Contains(got, c.digestKey+":") {
+			t.Errorf("expected key %s in output, got:\n%s", c.digestKey, got)
+		}
 		if !strings.Contains(got, "# "+c.version) {
-			t.Errorf("expected %s to be pinned with comment # %s, got:\n%s", c.key, c.version, got)
+			t.Errorf("expected version comment # %s in output, got:\n%s", c.version, got)
+		}
+	}
+	// Original _VERSION keys must be gone.
+	for _, key := range []string{"TF_VERSION", "TRIVY_VERSION", "NODE_VERSION", "ALPINE_VERSION"} {
+		if strings.Contains(got, key+":") {
+			t.Errorf("expected %s to be renamed, still present in output:\n%s", key, got)
 		}
 	}
 

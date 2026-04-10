@@ -196,7 +196,8 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 		} else if strings.HasPrefix(rest, `'`) {
 			quote = `'`
 		}
-		lines[i] = fmt.Sprintf("%s%s: %s%s%s # %s", indent, key, quote, digest, quote, version)
+		digestKey := toDigestKey(key)
+		lines[i] = fmt.Sprintf("%s%s: %s%s%s # %s", indent, digestKey, quote, digest, quote, version)
 	}
 	return strings.Join(lines, "\n")
 }
