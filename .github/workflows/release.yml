@@ -64,6 +64,13 @@ jobs:
           body: ${{ steps.cliff.outputs.content }}
           draft: false
 
+      - name: Notify pkg.go.dev
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          MODULE="github.com/Kirskov/Shapin"
+          curl -s "https://sum.golang.org/lookup/${MODULE}@${VERSION}" > /dev/null
+          curl -sX POST "https://pkg.go.dev/fetch/${MODULE}@${VERSION}" > /dev/null
+
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
