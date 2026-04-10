@@ -10,6 +10,22 @@ import (
 	"shapin/scanner"
 )
 
+func init() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: shapin [--flag value ...]\n\n")
+		flag.VisitAll(func(f *flag.Flag) {
+			if f.Name == "v" {
+				return // skip short alias, already shown via --version
+			}
+			fmt.Fprintf(os.Stderr, "  --%-20s %s", f.Name, f.Usage)
+			if f.DefValue != "" && f.DefValue != "false" {
+				fmt.Fprintf(os.Stderr, " (default: %s)", f.DefValue)
+			}
+			fmt.Fprintln(os.Stderr)
+		})
+	}
+}
+
 // Version, Commit and Date are set at build time via ldflags.
 var (
 	Version = "dev"
@@ -18,7 +34,7 @@ var (
 )
 
 func main() {
-	configPath := flag.String("config", "", "path to config file (default: .digestify.json)")
+	configPath := flag.String("config", "", "path to config file (default: .shapin.json)")
 	path := flag.String("path", ".", "path to the project to scan")
 	dryRun := flag.Bool("dry-run", true, "show changes without writing files")
 	githubToken := flag.String("github-token", os.Getenv("GITHUB_TOKEN"), "GitHub API token")

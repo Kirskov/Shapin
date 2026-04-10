@@ -105,10 +105,23 @@ func Run(cfg Config) error {
 	if cfg.DryRun && anyChanged.Load() {
 		fmt.Fprintln(out, "\n(dry-run) No files were modified.")
 	} else if !anyChanged.Load() {
-		fmt.Fprintln(out, "All refs already pinned — nothing to do.")
+		fmt.Fprintln(out, nothingToDoMessage(cfg.PinActions, cfg.PinImages))
 	}
 
 	return nil
+}
+
+func nothingToDoMessage(pinActions, pinImages bool) string {
+	switch {
+	case !pinActions && !pinImages:
+		return "Nothing to do — both --pin-refs and --pin-images are disabled."
+	case !pinImages:
+		return "Nothing to do — image pinning is disabled (--pin-images=false)."
+	case !pinActions:
+		return "Nothing to do — ref pinning is disabled (--pin-refs=false)."
+	default:
+		return "Everything already pinned — nothing to do."
+	}
 }
 
 // openOutput returns a writer for cfg.Output (a file path) or stdout,

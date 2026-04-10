@@ -166,57 +166,75 @@ All flags can be set in a `.shapin.json` file at the root of your project. CLI f
 }
 ```
 
-## When do you need a token?
+## Providers
 
-| Operation | Token needed? |
-|---|---|
-| Pinning Docker images | No — uses the public registry API |
-| Pinning GitHub Actions `uses:` | Yes — calls the GitHub API to resolve tags |
-| Pinning GitLab components | Yes — calls the GitLab API to resolve refs |
-| Scanning already-pinned files | No — skipped immediately |
+### GitHub Actions
 
-## Rate limiting
-
-API calls to GitHub and GitLab are automatically retried on HTTP 429 (rate limited) or 503 responses. The retry delay is read from the `Retry-After` or `X-RateLimit-Reset` headers, falling back to 60 seconds. Up to 3 retries are attempted before giving up.
-
-## GitLab input pinning
-
-For GitLab CI, two patterns are detected inside `variables:` and `inputs:` blocks at any nesting level:
-
-**1. `image:tag` values** — keys containing `TAG` whose value is in `image:tag` format. Use this for images not in the built-in stem list and without a `tag-mappings` entry:
+Pins `uses: owner/repo@tag` refs to their commit SHA. Requires `--github-token` to call the GitHub API.
 
 ```yaml
-variables:
-  SCANNER_TAG: myregistry.com/custom-scanner:1.2.3
-  # → SCANNER_TAG: myregistry.com/custom-scanner@sha256:... # 1.2.3
+- uses: actions/checkout@v4
+# → - uses: actions/checkout@abc1234... # v4
 ```
 
-**2. Bare version values** — keys ending in `_VERSION`, `_TAG`, or `_DIGEST` whose stem matches a built-in or user-supplied mapping. The version is resolved against the mapped image:
+Already-pinned refs (`@sha # tag`) are checked for drift — a warning is printed if the tag has been moved to a different commit.
 
-```yaml
-variables:
-  TF_VERSION: '1.13.5'      # stem TF → hashicorp/terraform
-  # → TF_VERSION: 'sha256:...' # 1.13.5
-```
+**Limitations:**
+- Branch refs (e.g. `@main`) are resolved to the current HEAD SHA, which will become stale over time — use tags when possible
 
-This works seamlessly with [GitLab CI components](https://docs.gitlab.com/ee/ci/components/):
+---
+
+### GitLab CI
+
+Scans `.gitlab-ci.yml`, `.gitlab-ci.yaml`, `.gitlab-ci-*.yml`, and any `.yml`/`.yaml` inside `.gitlab/` — at any directory depth, supporting monorepos where each subdirectory is its own project.
+
+#### Component refs
+
+Component refs (`component: path@tag`) are pinned to their commit SHA using the GitLab tags API — no token required for public components.
 
 ```yaml
 include:
-  - component: $CI_SERVER_HOST/my-group/my-component/deploy@2.1.4
-    inputs:
-      TF_VERSION: '1.13.5'        # → TF_VERSION: 'sha256:...' # 1.13.5
-      TRIVY_VERSION: "0.69.1"     # → TRIVY_VERSION: "sha256:..." # 0.69.1
-      NODE_VERSION: '24.13.0'     # → NODE_VERSION: 'sha256:...' # 24.13.0
-      ALPINE_VERSION: '3.23'      # → ALPINE_VERSION: 'sha256:...' # 3.23
-      TFSTATE_KEY_PATH: 'my-key'  # skipped — no known suffix
+  - component: gitlab.com/my-group/my-catalogue/deploy@2.1.4
+    # → component: gitlab.com/my-group/my-catalogue/deploy@abc1234... # 2.1.4
+```
+
+The predefined variables `$CI_SERVER_FQDN` and `$CI_SERVER_HOST` are automatically substituted with `--gitlab-host` (default: `gitlab.com`):
+
+```yaml
+component: $CI_SERVER_FQDN/components/sast/sast@3.4.0
+# → component: $CI_SERVER_FQDN/components/sast/sast@0a29cf... # 3.4.0
+```
+
+Other `$VARIABLE` prefixes (e.g. `$SPLIT_GLOBAL_COMPONENT_ROOT`) cannot be resolved and are left untouched.
+
+For **private components**, pass `--gitlab-token`. Without it a warning is printed:
+```
+warn: GitLab component .../private-comp@v1.0.0: HTTP 404 — try --gitlab-token if this is a private component
+```
+
+#### Version inputs
+
+Two patterns are detected inside `variables:` and `inputs:` blocks at any nesting level:
+
+**1. `image:tag` values** — keys containing `TAG` with a full `image:tag` value:
+
+```yaml
+SCANNER_TAG: myregistry.com/custom-scanner:1.2.3
+# → SCANNER_TAG: myregistry.com/custom-scanner@sha256:... # 1.2.3
+```
+
+**2. Bare version values** — keys ending or starting with `_VERSION`, `_TAG`, or `_DIGEST` whose stem matches a built-in or user-supplied image mapping. The key is renamed to use `_DIGEST`:
+
+```yaml
+TF_VERSION: '1.13.5'     # → TF_DIGEST: 'sha256:...' # 1.13.5
+VERSION_TF: '1.13.5'     # → DIGEST_TF: 'sha256:...' # 1.13.5
 ```
 
 Values starting with `$` (CI variable interpolation) or already containing a digest are left untouched.
 
-### Built-in stem mappings
+#### Built-in stem mappings
 
-The following stems are recognised out of the box (suffix `_VERSION`, `_TAG`, or `_DIGEST` is stripped to get the stem):
+The stem is the key name with `_VERSION`, `_TAG`, or `_DIGEST` stripped (prefix or suffix):
 
 | Stem(s) | Docker image |
 |---|---|
@@ -239,6 +257,7 @@ The following stems are recognised out of the box (suffix `_VERSION`, `_TAG`, or
 | `SONAR`, `SONARQUBE` | `sonarsource/sonar-scanner-cli` |
 | `AWS_CLI`, `AWSCLI` | `amazon/aws-cli` |
 | `CURL` | `curlimages/curl` |
+| `GIT_CLIFF` | `orhunp/git-cliff` |
 
 For images not in this list, add a `tag-mappings` entry to `.shapin.json`:
 
@@ -253,12 +272,86 @@ For images not in this list, add a `tag-mappings` entry to `.shapin.json`:
 
 User-supplied mappings override the built-ins.
 
+**Limitations:**
+- `extends:` and `!reference` template includes are not followed
+
+---
+
+### Forgejo Actions
+
+Pins `uses: owner/repo@tag` refs to their commit SHA. Falls back to `code.forgejo.org` for community actions.
+
+```yaml
+- uses: actions/checkout@v1
+# → - uses: actions/checkout@abc1234... # v1
+```
+
+---
+
+### CircleCI
+
+Pins Docker `image:` tags inside `.circleci/config.yml` and `.circleci/config.yaml` to digests.
+
+**Limitations:**
+- CircleCI orbs use semver versioning with no SHA pinning API — only `image:` tags are pinned
+
+---
+
+### Bitbucket Pipelines
+
+Pins Docker `image:` tags inside `bitbucket-pipelines.yml` and `bitbucket-pipelines.yaml` to digests.
+
+**Limitations:**
+- Bitbucket Pipes use semver versioning with no SHA pinning API — only `image:` tags are pinned
+
+---
+
+### Woodpecker CI
+
+Pins Docker `image:` tags inside `.woodpecker.yml`, `.woodpecker.yaml`, and any `.yml`/`.yaml` inside `.woodpecker/`.
+
+**Limitations:**
+- Woodpecker plugin steps are pinned by Docker image digest, but there is no SHA pinning API for the plugin registry itself
+
+---
+
+### Dockerfile
+
+Pins `FROM image:tag` lines to digests at any depth. The `AS alias` is preserved.
+
+```dockerfile
+FROM golang:1.24-alpine AS builder
+# → FROM golang@sha256:... # 1.24-alpine AS builder
+```
+
+`FROM scratch` is left untouched.
+
+---
+
+### Docker Compose
+
+Pins `image:` tags in `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `compose.yml`, and `compose.yaml` files at any depth.
+
+---
+
+## When do you need a token?
+
+| Operation | Token needed? |
+|---|---|
+| Pinning Docker images | No — uses the public registry API |
+| Pinning GitHub Actions `uses:` | Yes — `--github-token` |
+| Pinning GitLab components (public) | No — uses the public GitLab API |
+| Pinning GitLab components (private) | Yes — `--gitlab-token` |
+| Pinning Forgejo actions | No for public, `--forgejo-token` for private |
+| Scanning already-pinned files | No — skipped immediately |
+
+## Rate limiting
+
+API calls are automatically retried on HTTP 429 (rate limited) or 503 responses. The retry delay is read from the `Retry-After` or `X-RateLimit-Reset` headers, falling back to 60 seconds. Up to 3 retries are attempted before giving up.
+
 ## What it can't do
 
 - **Private Docker registries** — only public registries (Docker Hub, GHCR, Quay.io, etc.) are supported
 - **`image:` inside a YAML map** — only the simple string form is handled (`image: name:tag`), not `image: { name: ..., tag: ... }`
-- **Branch refs** — pinning `uses: action@main` will resolve to the current SHA of `main`, which will become stale over time. Use tags when possible
-- **GitLab CI `extends:` or `!reference`** — template includes are not followed
-- **CircleCI orbs** — orbs use semver versioning and have no SHA pinning API; only Docker `image:` tags inside CircleCI configs are pinned
-- **Bitbucket Pipes** — pipes use semver versioning with no SHA pinning API; only Docker `image:` tags inside Bitbucket Pipelines configs are pinned
-- **Woodpecker CI plugins** — Woodpecker plugin steps (`image:`) are pinned, but the Woodpecker plugin registry has no SHA pinning API; only Docker `image:` tags are pinned
+- **Branch refs** — pinning `@main` resolves to the current HEAD SHA, which will become stale — use tags when possible
+- **Unknown GitLab CI variable prefixes** — component paths starting with `$SPLIT_GLOBAL_COMPONENT_ROOT` or similar custom variables cannot be resolved

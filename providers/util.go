@@ -47,7 +47,7 @@ const (
 	patternFromPinned   = `(?m)^FROM\s+([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s+#\s+(\S+)`
 	patternGHAction    = `(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([^\s#]+)`
 	patternGHPinned    = `uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([0-9a-f]{40})\s+#\s+(\S+)`
-	patternGLComponent = `(component:\s+)([a-zA-Z0-9_.\-/]+)@([^\s#]+)`
+	patternGLComponent = `(component:\s+)(\$?[a-zA-Z0-9_.\-/]+)@([^\s#]+)`
 	patternGLPinned    = `component:\s+([a-zA-Z0-9_.\-/]+)@([0-9a-f]{40})\s+#\s+(\S+)`
 	patternGLInputTag  = `(?m)^(\s+[A-Z0-9_]*TAG[A-Z0-9_]*:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?\s*)$`
 
@@ -86,7 +86,8 @@ var builtinStemMappings = map[string]string{
 	"SONAR":      "sonarsource/sonar-scanner-cli",
 	"AWS_CLI":    "amazon/aws-cli",
 	"AWSCLI":     "amazon/aws-cli",
-	"CURL":       "curlimages/curl",
+	"CURL":      "curlimages/curl",
+	"GIT_CLIFF": "orhunp/git-cliff",
 }
 
 // versionMarkers are the tokens that may appear as a prefix or suffix
@@ -110,8 +111,8 @@ func extractStem(key string) string {
 }
 
 // toDigestKey renames a version marker in a variable name to DIGEST,
-// preserving the original case pattern and position.
-// e.g. TF_VERSION → TF_DIGEST, VERSION_TF → DIGEST_TF, TF_TAG → TF_DIGEST
+// matching the case of the original marker.
+// e.g. TF_VERSION → TF_DIGEST, version_tf → digest_tf, TF_TAG → TF_DIGEST
 func toDigestKey(key string) string {
 	upper := strings.ToUpper(key)
 	for _, marker := range versionMarkers {
@@ -119,13 +120,25 @@ func toDigestKey(key string) string {
 			continue
 		}
 		if strings.HasSuffix(upper, "_"+marker) {
-			return key[:len(key)-len(marker)] + "DIGEST"
+			original := key[len(key)-len(marker):]
+			replacement := matchCase("DIGEST", original)
+			return key[:len(key)-len(marker)] + replacement
 		}
 		if strings.HasPrefix(upper, marker+"_") {
-			return "DIGEST" + key[len(marker):]
+			original := key[:len(marker)]
+			replacement := matchCase("DIGEST", original)
+			return replacement + key[len(marker):]
 		}
 	}
 	return key
+}
+
+// matchCase returns s in lowercase if ref is all lowercase, otherwise uppercase.
+func matchCase(s, ref string) string {
+	if ref == strings.ToLower(ref) {
+		return strings.ToLower(s)
+	}
+	return s
 }
 
 // isSHA returns true if the string looks like a full git SHA or docker digest.

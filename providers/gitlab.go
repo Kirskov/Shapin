@@ -1,7 +1,9 @@
 package providers
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"gopkg.in/yaml.v3"
 )
@@ -20,12 +22,28 @@ var gitlabCIRootFiles = []string{
 // e.g. `      TRIVY_TAG: "aquasec/trivy:0.69.3"`
 var gitlabInputTagRegex = mustCompile(patternGLInputTag)
 
+// gitlabComponentRegex matches GitLab CI component refs:
+// `component: gitlab.com/group/project/name@ref`
+var gitlabComponentRegex = mustCompile(patternGLComponent)
+
+// gitlabPinnedComponentRegex matches already-pinned component refs.
+var gitlabPinnedComponentRegex = mustCompile(patternGLPinned)
+
+const defaultGitLabHost = "https://gitlab.com"
+
 type gitlabResolver struct {
+	host        string
+	token       string
+	client      *http.Client
+	cache       *syncCache
 	docker      *dockerResolver
 	tagMappings map[string]string // stem → image, merges builtins + user overrides
 }
 
 func NewGitLabResolver(host, token string, userMappings map[string]string) *gitlabResolver {
+	if host == "" {
+		host = defaultGitLabHost
+	}
 	merged := make(map[string]string, len(builtinStemMappings)+len(userMappings))
 	for k, v := range builtinStemMappings {
 		merged[k] = v
@@ -35,6 +53,10 @@ func NewGitLabResolver(host, token string, userMappings map[string]string) *gitl
 		merged[strings.ToUpper(k)] = v
 	}
 	return &gitlabResolver{
+		host:        host,
+		token:       token,
+		client:      newHTTPClient(),
+		cache:       newSyncCachePtr(),
 		docker:      newDockerResolver(token),
 		tagMappings: merged,
 	}
@@ -202,13 +224,173 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 	return strings.Join(lines, "\n")
 }
 
-// Resolve replaces image tags and bare version inputs to digests.
-func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
-	if !pinImages {
-		return content, nil
+// gitlabHostVars are predefined GitLab CI variables that expand to the instance hostname.
+// They are replaced with the configured host so component paths can be resolved.
+var gitlabHostVars = []string{"$CI_SERVER_FQDN", "$CI_SERVER_HOST"}
+
+// resolveHostVar replaces a known GitLab host variable at the start of a
+// component path with the bare hostname of r.host (e.g. "gitlab.com").
+func (r *gitlabResolver) resolveHostVar(component string) string {
+	host := strings.TrimPrefix(r.host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	for _, v := range gitlabHostVars {
+		if strings.HasPrefix(component, v+"/") {
+			return host + component[len(v):]
+		}
 	}
-	result := r.docker.resolveImages(content)
-	result = r.resolveComponentInputs(result)
-	result = r.resolveMappedVersionInputs(result)
+	return component
+}
+
+// pinComponents pins `component: path@ref` refs to their commit SHAs.
+func (r *gitlabResolver) pinComponents(content string) (string, error) {
+	var resolveErr error
+	result := replaceMatches(gitlabComponentRegex, content, func(parts []string) (string, bool) {
+		if resolveErr != nil {
+			return "", false
+		}
+		prefix, component, ref := parts[1], parts[2], parts[3]
+		if isSHA(ref) {
+			return "", false
+		}
+		// Resolve known GitLab host variables to the configured host.
+		resolved := r.resolveHostVar(component)
+		// Skip if path still contains a variable we can't resolve.
+		if strings.HasPrefix(resolved, "$") {
+			return "", false
+		}
+		sha, err := r.cache.getOrSet("component:"+resolved+"@"+ref, func() (string, error) {
+			return r.fetchComponentSHA(resolved, ref)
+		})
+		if err != nil {
+			msg := fmt.Sprintf("  warn: GitLab component %s@%s: %v", component, ref, err)
+			if strings.Contains(err.Error(), "HTTP 404") {
+				msg += " — try --gitlab-token if this is a private component"
+			}
+			fmt.Println(msg)
+			return "", false
+		}
+		return fmt.Sprintf("%s%s@%s # %s", prefix, component, sha, ref), true
+	})
+	return result, resolveErr
+}
+
+// warnIfDrifted checks already-pinned component refs and warns if the SHA has changed.
+func (r *gitlabResolver) warnIfDrifted(content string) {
+	(&driftChecker{
+		pinnedRegex: gitlabPinnedComponentRegex,
+		kind:        "ref",
+		resolve:     r.fetchComponentSHA,
+	}).checkAll(content)
+}
+
+// fetchComponentSHA resolves a component ref to a commit SHA.
+// It tries the tags API first (no token needed for public projects),
+// then falls back to the commits API.
+func (r *gitlabResolver) fetchComponentSHA(component, ref string) (string, error) {
+	projectPath := extractProjectPath(component)
+	if projectPath == "" {
+		return "", fmt.Errorf("cannot parse component path: %s", component)
+	}
+	encoded := strings.ReplaceAll(projectPath, "/", "%2F")
+
+	// Try tags API first — works without a token for public projects.
+	if sha, err := r.fetchTagSHA(encoded, ref); err == nil {
+		return sha, nil
+	}
+
+	// Fall back to commits API (covers branches and plain SHAs).
+	return r.fetchCommitSHA(encoded, ref)
+}
+
+func (r *gitlabResolver) fetchTagSHA(encodedProject, tag string) (string, error) {
+	url := fmt.Sprintf("%s/api/v4/projects/%s/repository/tags/%s", r.host, encodedProject, tag)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	if r.token != "" {
+		req.Header.Set("PRIVATE-TOKEN", r.token)
+	}
+	resp, err := doWithRetry(r.client, req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d for tag %s", resp.StatusCode, tag)
+	}
+	var result struct {
+		Commit struct {
+			ID string `json:"id"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Commit.ID == "" {
+		return "", fmt.Errorf("empty SHA for tag %s", tag)
+	}
+	return result.Commit.ID, nil
+}
+
+func (r *gitlabResolver) fetchCommitSHA(encodedProject, ref string) (string, error) {
+	url := fmt.Sprintf("%s/api/v4/projects/%s/repository/commits/%s", r.host, encodedProject, ref)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	if r.token != "" {
+		req.Header.Set("PRIVATE-TOKEN", r.token)
+	}
+	resp, err := doWithRetry(r.client, req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d for ref %s", resp.StatusCode, ref)
+	}
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.ID == "" {
+		return "", fmt.Errorf("empty SHA for ref %s", ref)
+	}
+	return result.ID, nil
+}
+
+// extractProjectPath extracts "group/project" from a component path like
+// "gitlab.com/group/project/component" or "group/project/component".
+func extractProjectPath(component string) string {
+	parts := strings.Split(component, "/")
+	start := 0
+	if strings.Contains(parts[0], ".") {
+		start = 1
+	}
+	if len(parts) < start+2 {
+		return ""
+	}
+	return parts[start] + "/" + parts[start+1]
+}
+
+// Resolve replaces image tags, bare version inputs, and component refs to digests/SHAs.
+func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
+	result := content
+	if pinImages {
+		result = r.docker.resolveImages(result)
+		result = r.resolveComponentInputs(result)
+		result = r.resolveMappedVersionInputs(result)
+	}
+	if pinActions {
+		r.warnIfDrifted(result)
+		var err error
+		result, err = r.pinComponents(result)
+		if err != nil {
+			return result, err
+		}
+	}
 	return result, nil
 }
