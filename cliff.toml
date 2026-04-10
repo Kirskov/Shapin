@@ -1,0 +1,31 @@
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}\
+  - {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message }}\
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = """
+{% if previous.version %}**Full changelog**: https://github.com/Kirskov/Shapin/compare/{{ previous.version }}...{{ version }}{% endif %}
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^refactor", group = "Refactoring" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^test", group = "Tests" },
+  { message = "^chore", group = "Chores" },
+  { message = "^rename", skip = true },
+]
+filter_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"

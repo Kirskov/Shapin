@@ -50,11 +50,18 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        id: cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body: ${{ steps.cliff.outputs.content }}
           draft: false
 
   docker:
