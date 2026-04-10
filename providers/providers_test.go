@@ -90,7 +90,7 @@ func TestIsGitHubWorkflow(t *testing.T) {
 // ── isGitLabCI ───────────────────────────────────────────────────────────────
 
 func TestIsGitLabCI(t *testing.T) {
-	p := NewGitLabResolver(gitlabCom, "")
+	p := NewGitLabResolver(gitlabCom, "", nil)
 	cases := []struct {
 		path string
 		want bool
@@ -107,6 +107,193 @@ func TestIsGitLabCI(t *testing.T) {
 	for _, c := range cases {
 		if got := p.IsMatch(c.path); got != c.want {
 			t.Errorf("GitLab IsMatch(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+// ── GitLab version input pinning ─────────────────────────────────────────────
+
+func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:terraform01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "      TF_VERSION: \"1.14.8\"\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:terraform01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 1.14.8") {
+		t.Errorf(wantTagAsComment, got)
+	}
+}
+
+func TestGitLabPinsUserMappingOverridesBuiltin(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:customtf01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", map[string]string{"TF": "myregistry.example.com/terraform"})
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "      TF_VERSION: \"1.14.8\"\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:customtf01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+}
+
+func TestGitLabSkipsVersionInputWithDollarSign(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "      TF_VERSION: \"$SOME_VAR\"\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected CI variable interpolation to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsVersionInputAlreadyDigest(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "      TF_VERSION: \"sha256:abc123\"\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected already-digested value to be skipped, got:\n%s", got)
+	}
+}
+
+func TestExtractStem(t *testing.T) {
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{"TF_VERSION", "TF"},
+		{"TF_TAG", "TF"},
+		{"TF_DIGEST", "TF"},
+		{"NODE_VERSION", "NODE"},
+		{"tf_version", "TF"}, // case-insensitive
+		{"NOTSUFFIX", ""},
+		{"VERSION", ""},      // no stem left
+	}
+	for _, c := range cases {
+		if got := extractStem(c.key); got != c.want {
+			t.Errorf("extractStem(%q) = %q, want %q", c.key, got, c.want)
+		}
+	}
+}
+
+func digestForPath(path string, digests map[string]string) string {
+	for image, digest := range digests {
+		if strings.Contains(path, image) {
+			return digest
+		}
+	}
+	return "sha256:fallback0"
+}
+
+func TestGitLabRealWorldComponentInputs(t *testing.T) {
+	// Each image gets a distinct digest so we can assert each one was resolved.
+	digests := map[string]string{
+		"hashicorp/terraform": "sha256:tf000001",
+		"aquasec/trivy":       "sha256:trivy001",
+		"node":                "sha256:node0001",
+		"alpine":              "sha256:alpine01",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, digestForPath(r.URL.Path, digests))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := `variables:
+  DEPLOY_ENV:
+    description: 'Deploy on the environment'
+    value: 'dev'
+    options:
+      - 'dev'
+      - 'int'
+      - 'uat'
+      - 'stg'
+      - 'prd'
+  INFRA_DIR: ./infra/
+  WORKING_DIR: .
+  PACKAGE_JSON_DIR: ./lambdas/
+  IS_PACKAGE_BUILD_NEEDED: 'false'
+
+include:
+  - component: $SPLIT_GLOBAL_COMPONENT_ROOT/node-catalogue/node-lambda-base@2.1.4
+    inputs:
+      TFSTATE_KEY_PATH: 'lambdas-ingestions-stepfunction'
+      SCAN_PREFIX: 'lambdas'
+      TF_VERSION: '1.13.5'
+      TRIVY_VERSION: "0.69.1"
+      NODE_VERSION: '24.13.0'
+      ALPINE_VERSION: '3.23'
+`
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Version inputs must be pinned.
+	pinned := []struct{ key, version string }{
+		{"TF_VERSION", "1.13.5"},
+		{"TRIVY_VERSION", "0.69.1"},
+		{"NODE_VERSION", "24.13.0"},
+		{"ALPINE_VERSION", "3.23"},
+	}
+	for _, c := range pinned {
+		if !strings.Contains(got, "# "+c.version) {
+			t.Errorf("expected %s to be pinned with comment # %s, got:\n%s", c.key, c.version, got)
+		}
+	}
+
+	// Non-version keys must be unchanged.
+	unchanged := []string{
+		"DEPLOY_ENV:",
+		"INFRA_DIR: ./infra/",
+		"WORKING_DIR: .",
+		"IS_PACKAGE_BUILD_NEEDED: 'false'",
+		"TFSTATE_KEY_PATH: 'lambdas-ingestions-stepfunction'",
+		"SCAN_PREFIX: 'lambdas'",
+		"component: $SPLIT_GLOBAL_COMPONENT_ROOT/node-catalogue/node-lambda-base@2.1.4",
+	}
+	for _, s := range unchanged {
+		if !strings.Contains(got, s) {
+			t.Errorf("expected %q to be unchanged in output, got:\n%s", s, got)
 		}
 	}
 }
@@ -337,27 +524,6 @@ func TestSplitRegistryAndRepo(t *testing.T) {
 		if host != c.wantHost || repo != c.wantRepo {
 			t.Errorf("splitRegistryAndRepo(%q) = (%q, %q), want (%q, %q)",
 				c.image, host, repo, c.wantHost, c.wantRepo)
-		}
-	}
-}
-
-// ── extractProjectPath ───────────────────────────────────────────────────────
-
-func TestExtractProjectPath(t *testing.T) {
-	const groupProject = "group/project"
-	cases := []struct {
-		component string
-		want      string
-	}{
-		{"gitlab.com/group/project/component", groupProject},
-		{"group/project/component", groupProject},
-		{"gitlab.com/group/project", groupProject},
-		{"group/project", groupProject},
-		{"only", ""},
-	}
-	for _, c := range cases {
-		if got := extractProjectPath(c.component); got != c.want {
-			t.Errorf("extractProjectPath(%q) = %q, want %q", c.component, got, c.want)
 		}
 	}
 }

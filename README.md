@@ -9,8 +9,8 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | GitHub Action | `uses: actions/checkout@v4` | `uses: actions/checkout@abc1234... # v4` |
 | Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # 2.2.1` |
 | Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
-| GitLab TAG input | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_DIGEST: aquasec/trivy@sha256:eafae... # 0.69.3` |
-| GitLab mapped input | `TRIVY_VERSION: "0.69.3"` | `TRIVY_DIGEST: aquasec/trivy@sha256:eafae... # 0.69.3` |
+| GitLab `image:tag` input | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
+| GitLab bare version input | `TF_VERSION: "1.14.8"` | `TF_VERSION: "sha256:6bbb82... # 1.14.8"` |
 
 Already-pinned refs (SHA or digest) are left untouched.
 
@@ -162,12 +162,7 @@ All flags can be set in a `.shapin.json` file at the root of your project. CLI f
   "exclude": [
     ".github/workflows/generated.yml",
     ".gitlab/auto-*.yml"
-  ],
-  "tag-mappings": {
-    "NODE_TAG": "node",
-    "TRIVY_VERSION": "aquasec/trivy",
-    "ALPINE_TAG": "alpine"
-  }
+  ]
 }
 ```
 
@@ -186,40 +181,77 @@ API calls to GitHub and GitLab are automatically retried on HTTP 429 (rate limit
 
 ## GitLab input pinning
 
-For GitLab CI, image references inside `include[].inputs`, `variables`, and `trigger.include[].inputs` are pinned in two ways:
+For GitLab CI, two patterns are detected inside `variables:` and `inputs:` blocks at any nesting level:
 
-**1. Auto-detection — key contains `TAG` with `image:tag` value:**
+**1. `image:tag` values** — keys containing `TAG` whose value is in `image:tag` format. Use this for images not in the built-in stem list and without a `tag-mappings` entry:
 
 ```yaml
 variables:
-  TRIVY_TAG: aquasec/trivy:0.69.3       # → TRIVY_DIGEST: aquasec/trivy@sha256:... # 0.69.3
-
-include:
-  - component: gitlab.com/group/project/scanner@v1
-    inputs:
-      SCANNER_TAG: myregistry.com/scanner:1.2.3  # → SCANNER_DIGEST: myregistry.com/scanner@sha256:... # 1.2.3
-      severity: HIGH                              # skipped — no TAG in key name
+  SCANNER_TAG: myregistry.com/custom-scanner:1.2.3
+  # → SCANNER_TAG: myregistry.com/custom-scanner@sha256:... # 1.2.3
 ```
 
-**2. Mapped keys — plain version values via `tag-mappings` in `.shapin.json`:**
+**2. Bare version values** — keys ending in `_VERSION`, `_TAG`, or `_DIGEST` whose stem matches a built-in or user-supplied mapping. The version is resolved against the mapped image:
 
 ```yaml
-# .shapin.json
+variables:
+  TF_VERSION: '1.13.5'      # stem TF → hashicorp/terraform
+  # → TF_VERSION: 'sha256:...' # 1.13.5
+```
+
+This works seamlessly with [GitLab CI components](https://docs.gitlab.com/ee/ci/components/):
+
+```yaml
+include:
+  - component: $CI_SERVER_HOST/my-group/my-component/deploy@2.1.4
+    inputs:
+      TF_VERSION: '1.13.5'        # → TF_VERSION: 'sha256:...' # 1.13.5
+      TRIVY_VERSION: "0.69.1"     # → TRIVY_VERSION: "sha256:..." # 0.69.1
+      NODE_VERSION: '24.13.0'     # → NODE_VERSION: 'sha256:...' # 24.13.0
+      ALPINE_VERSION: '3.23'      # → ALPINE_VERSION: 'sha256:...' # 3.23
+      TFSTATE_KEY_PATH: 'my-key'  # skipped — no known suffix
+```
+
+Values starting with `$` (CI variable interpolation) or already containing a digest are left untouched.
+
+### Built-in stem mappings
+
+The following stems are recognised out of the box (suffix `_VERSION`, `_TAG`, or `_DIGEST` is stripped to get the stem):
+
+| Stem(s) | Docker image |
+|---|---|
+| `TF`, `TERRAFORM` | `hashicorp/terraform` |
+| `NODE`, `NODEJS` | `node` |
+| `TRIVY` | `aquasec/trivy` |
+| `JAVA` | `eclipse-temurin` |
+| `ALPINE` | `alpine` |
+| `PYTHON` | `python` |
+| `GO`, `GOLANG` | `golang` |
+| `RUBY` | `ruby` |
+| `RUST` | `rust` |
+| `DOTNET` | `mcr.microsoft.com/dotnet/sdk` |
+| `KUBECTL` | `bitnami/kubectl` |
+| `HELM` | `alpine/helm` |
+| `POSTGRES` | `postgres` |
+| `MYSQL` | `mysql` |
+| `REDIS` | `redis` |
+| `NGINX` | `nginx` |
+| `SONAR`, `SONARQUBE` | `sonarsource/sonar-scanner-cli` |
+| `AWS_CLI`, `AWSCLI` | `amazon/aws-cli` |
+| `CURL` | `curlimages/curl` |
+
+For images not in this list, add a `tag-mappings` entry to `.shapin.json`:
+
+```json
 {
   "tag-mappings": {
-    "NODE_VERSION": "node",
-    "TRIVY_VERSION": "aquasec/trivy"
+    "MYAPP": "registry.internal/myapp",
+    "TF": "myregistry.internal/mirror/terraform"
   }
 }
 ```
 
-```yaml
-inputs:
-  NODE_VERSION: '24.13.0'    # → NODE_DIGEST: node@sha256:... # 24.13.0
-  TRIVY_VERSION: "0.69.3"   # → TRIVY_DIGEST: aquasec/trivy@sha256:... # 0.69.3
-```
-
-In both cases, the key suffix `_TAG` or `_VERSION` is renamed to `_DIGEST`.
+User-supplied mappings override the built-ins.
 
 ## What it can't do
 

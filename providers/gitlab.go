@@ -22,13 +22,21 @@ var gitlabInputTagRegex = mustCompile(patternGLInputTag)
 
 type gitlabResolver struct {
 	docker      *dockerResolver
-	tagMappings map[string]string // key (e.g. NODE_TAG) → image (e.g. node)
+	tagMappings map[string]string // stem → image, merges builtins + user overrides
 }
 
-func NewGitLabResolver(host, token string, tagMappings map[string]string) *gitlabResolver {
+func NewGitLabResolver(host, token string, userMappings map[string]string) *gitlabResolver {
+	merged := make(map[string]string, len(builtinStemMappings)+len(userMappings))
+	for k, v := range builtinStemMappings {
+		merged[k] = v
+	}
+	// User-supplied mappings override builtins.
+	for k, v := range userMappings {
+		merged[strings.ToUpper(k)] = v
+	}
 	return &gitlabResolver{
 		docker:      newDockerResolver(token),
-		tagMappings: tagMappings,
+		tagMappings: merged,
 	}
 }
 
@@ -49,45 +57,37 @@ func (r *gitlabResolver) IsMatch(relPath string) bool {
 // resolveComponentInputs pins image:tag values in inputs: blocks whose key
 // contains "TAG" (e.g. TRIVY_TAG, IMAGE_TAG). Uses yaml.v3 to identify which
 // keys are TAG inputs, then regex-replaces to preserve file formatting.
-// Also handles plain version values (e.g. NODE_TAG: '24.13.1') via tagMappings.
 func (r *gitlabResolver) resolveComponentInputs(content string) string {
-	tagKeys := collectTagInputKeys(content, r.tagMappings)
-	result := content
-	if len(tagKeys) > 0 {
-		// Pin standard image:tag values
-		result = gitlabInputTagRegex.ReplaceAllStringFunc(result, r.pinInputTagMatch(tagKeys))
+	tagKeys := collectTagInputKeys(content)
+	if len(tagKeys) == 0 {
+		return content
 	}
-	// Pin plain version values via tagMappings (runs independently)
-	if len(r.tagMappings) > 0 {
-		result = r.resolveMappedTagInputs(result)
-	}
-	return result
+	return gitlabInputTagRegex.ReplaceAllStringFunc(content, r.pinInputTagMatch(tagKeys))
 }
 
 // collectTagInputKeys parses the YAML and returns the set of input key names
-// that contain "TAG" and hold an unpinned image:tag value, or a plain version
-// value for keys present in tagMappings.
+// that contain "TAG" and hold an unpinned image:tag value.
 // It walks the entire document recursively so it catches variables: and inputs:
 // at any nesting level (top-level, inside jobs, inside include blocks, etc.).
-func collectTagInputKeys(content string, tagMappings map[string]string) map[string]bool {
+func collectTagInputKeys(content string) map[string]bool {
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil || root.Kind == 0 {
 		return nil
 	}
 	keys := make(map[string]bool)
-	walkTagMaps(&root, keys, tagMappings)
+	walkTagMaps(&root, keys)
 	return keys
 }
 
 // walkTagMaps recursively walks a yaml.Node tree and collects keys that
 // contain "TAG" from any "variables" or "inputs" mapping node.
-func walkTagMaps(node *yaml.Node, keys map[string]bool, tagMappings map[string]string) {
+func walkTagMaps(node *yaml.Node, keys map[string]bool) {
 	if node == nil {
 		return
 	}
 	if node.Kind == yaml.DocumentNode {
 		for _, child := range node.Content {
-			walkTagMaps(child, keys, tagMappings)
+			walkTagMaps(child, keys)
 		}
 		return
 	}
@@ -98,87 +98,30 @@ func walkTagMaps(node *yaml.Node, keys map[string]bool, tagMappings map[string]s
 			if keyNode.Kind == yaml.ScalarNode &&
 				(keyNode.Value == "variables" || keyNode.Value == "inputs") &&
 				valNode.Kind == yaml.MappingNode {
-				collectTagKeysFromMap(valNode, keys, tagMappings)
+				collectTagKeysFromMap(valNode, keys)
 			}
 			// Recurse into all values regardless
-			walkTagMaps(valNode, keys, tagMappings)
+			walkTagMaps(valNode, keys)
 		}
 		return
 	}
 	if node.Kind == yaml.SequenceNode {
 		for _, child := range node.Content {
-			walkTagMaps(child, keys, tagMappings)
+			walkTagMaps(child, keys)
 		}
 	}
 }
 
 // collectTagKeysFromMap adds keys containing "TAG" with an image:tag value
-// from a mapping node into keys. Also adds keys present in tagMappings with
-// a plain version value (e.g. NODE_TAG: '24.13.1').
-func collectTagKeysFromMap(node *yaml.Node, keys map[string]bool, tagMappings map[string]string) {
+// from a mapping node into keys.
+func collectTagKeysFromMap(node *yaml.Node, keys map[string]bool) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		k := node.Content[i].Value
 		v := node.Content[i+1].Value
-		if isSHA(v) {
-			continue
-		}
-		// Standard image:tag format
-		if strings.Contains(strings.ToUpper(k), "TAG") && strings.Contains(v, ":") {
-			keys[k] = true
-			continue
-		}
-		// Plain version via tag mapping (e.g. NODE_TAG: '24.13.1')
-		if _, ok := tagMappings[k]; ok {
+		if strings.Contains(strings.ToUpper(k), "TAG") && !isSHA(v) && strings.Contains(v, ":") {
 			keys[k] = true
 		}
 	}
-}
-
-// resolveMappedTagInputs pins plain version values (e.g. NODE_TAG: '24.13.1')
-// using the tagMappings to determine the image name.
-func (r *gitlabResolver) resolveMappedTagInputs(content string) string {
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimLeft(line, " \t")
-		colonIdx := strings.Index(trimmed, ":")
-		if colonIdx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(trimmed[:colonIdx])
-		image, ok := r.tagMappings[key]
-		if !ok {
-			continue
-		}
-		rest := strings.TrimSpace(trimmed[colonIdx+1:])
-		// Strip surrounding quotes
-		tag := strings.Trim(rest, `'"`)
-		if tag == "" || isSHA(tag) || strings.Contains(tag, ":") || strings.HasPrefix(tag, "$") {
-			continue
-		}
-		digest, err := r.docker.fetchDigest(image, tag)
-		if err != nil {
-			fmt.Printf("  warn: GitLab input %s (%s:%s): %v\n", key, image, tag, err)
-			continue
-		}
-		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		// Preserve original quote style
-		quote := ""
-		if strings.HasPrefix(rest, `"`) {
-			quote = `"`
-		} else if strings.HasPrefix(rest, `'`) {
-			quote = `'`
-		}
-		// Rename key: replace trailing _TAG or _VERSION suffix with _DIGEST
-		newKey := key
-		for _, suffix := range []string{"_TAG", "_VERSION"} {
-			if strings.HasSuffix(newKey, suffix) {
-				newKey = newKey[:len(newKey)-len(suffix)] + "_DIGEST"
-				break
-			}
-		}
-		lines[i] = fmt.Sprintf("%s%s: %s%s@%s%s # %s", indent, newKey, quote, image, digest, quote, tag)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // pinInputTagMatch returns a replacement function for gitlabInputTagRegex that
@@ -207,12 +150,58 @@ func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool) func(string) 
 	}
 }
 
-// Resolve replaces image tags to digests.
+// resolveMappedVersionInputs pins bare version values (e.g. TF_VERSION: "1.14.8")
+// by looking up the key's stem in tagMappings to find the image, then fetching
+// the digest for that version. Values starting with "$" (CI variable interpolation)
+// or already containing a digest are skipped.
+func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		colonIdx := strings.Index(trimmed, ":")
+		if colonIdx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:colonIdx])
+		stem := extractStem(key)
+		if stem == "" {
+			continue
+		}
+		image, ok := r.tagMappings[stem]
+		if !ok {
+			continue
+		}
+		rest := strings.TrimSpace(trimmed[colonIdx+1:])
+		version := strings.Trim(rest, `'"`)
+		// Skip: CI variable interpolation, already a digest, image:tag format, empty
+		if version == "" || strings.HasPrefix(version, "$") || isSHA(version) || strings.Contains(version, ":") {
+			continue
+		}
+		digest, err := r.docker.fetchDigest(image, version)
+		if err != nil {
+			fmt.Printf("  warn: GitLab input %s (%s:%s): %v\n", key, image, version, err)
+			continue
+		}
+		indent := line[:len(line)-len(trimmed)]
+		// Preserve original quote style
+		quote := ""
+		if strings.HasPrefix(rest, `"`) {
+			quote = `"`
+		} else if strings.HasPrefix(rest, `'`) {
+			quote = `'`
+		}
+		lines[i] = fmt.Sprintf("%s%s: %s%s%s # %s", indent, key, quote, digest, quote, version)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Resolve replaces image tags and bare version inputs to digests.
 func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
 	if !pinImages {
 		return content, nil
 	}
 	result := r.docker.resolveImages(content)
 	result = r.resolveComponentInputs(result)
+	result = r.resolveMappedVersionInputs(result)
 	return result, nil
 }

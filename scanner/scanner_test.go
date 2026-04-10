@@ -96,7 +96,7 @@ func TestFindWorkflowFiles(t *testing.T) {
 
 	pl := []contract.Provider{
 		providers.NewGitHubResolver(""),
-		providers.NewGitLabResolver(gitlabCom, ""),
+		providers.NewGitLabResolver(gitlabCom, "", nil),
 	}
 	files, err := findWorkflowFiles(dir, pl, nil)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestRunnerDryRun(t *testing.T) {
 
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
-		providers.NewGitLabResolver(gitlabCom, ""),
+		providers.NewGitLabResolver(gitlabCom, "", nil),
 	}
 	files, err := findWorkflowFiles(dir, pl, nil)
 	if err != nil {
@@ -204,7 +204,7 @@ func TestRunnerAppliesChanges(t *testing.T) {
 
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
-		providers.NewGitLabResolver(gitlabCom, ""),
+		providers.NewGitLabResolver(gitlabCom, "", nil),
 	}
 	fc, err := processFile(ghDir+ciYML, dir, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 	if err != nil {
@@ -237,7 +237,7 @@ func TestRunnerConcurrency(t *testing.T) {
 
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
-		providers.NewGitLabResolver(gitlabCom, ""),
+		providers.NewGitLabResolver(gitlabCom, "", nil),
 	}
 	files, err := findWorkflowFiles(dir, pl, nil)
 	if err != nil {

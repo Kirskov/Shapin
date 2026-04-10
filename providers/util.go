@@ -45,11 +45,11 @@ const (
 	patternDockerPinned = `image:\s+['"]?([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)['"]?\s+#\s+(\S+)`
 	patternFromLine     = `(?m)^(FROM\s+)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(\s|$)`
 	patternFromPinned   = `(?m)^FROM\s+([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s+#\s+(\S+)`
-	patternGHAction   = `(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([^\s#]+)`
-	patternGHPinned   = `uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([0-9a-f]{40})\s+#\s+(\S+)`
+	patternGHAction    = `(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([^\s#]+)`
+	patternGHPinned    = `uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([0-9a-f]{40})\s+#\s+(\S+)`
 	patternGLComponent = `(component:\s+)([a-zA-Z0-9_.\-/]+)@([^\s#]+)`
-	patternGLPinned   = `component:\s+([a-zA-Z0-9_.\-/]+)@([0-9a-f]{40})\s+#\s+(\S+)`
-	patternGLInputTag = `(?m)^(\s+[A-Z0-9_]*TAG[A-Z0-9_]*:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?\s*)$`
+	patternGLPinned    = `component:\s+([a-zA-Z0-9_.\-/]+)@([0-9a-f]{40})\s+#\s+(\S+)`
+	patternGLInputTag  = `(?m)^(\s+[A-Z0-9_]*TAG[A-Z0-9_]*:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?\s*)$`
 
 	bearerPrefix  = "Bearer "
 	maxRetries    = 3
@@ -57,6 +57,52 @@ const (
 )
 
 var shaRegex = regexp.MustCompile(patternSHA)
+
+// builtinStemMappings maps common CI variable stems to their Docker Hub image.
+// A stem is the variable name with a _TAG / _VERSION / _DIGEST suffix stripped,
+// e.g. TF_VERSION → stem "TF" → "hashicorp/terraform".
+// User-supplied tag-mappings in .shapin.json extend or override these.
+var builtinStemMappings = map[string]string{
+	"TF":        "hashicorp/terraform",
+	"TERRAFORM": "hashicorp/terraform",
+	"NODE":      "node",
+	"NODEJS":    "node",
+	"TRIVY":     "aquasec/trivy",
+	"JAVA":      "eclipse-temurin",
+	"ALPINE":    "alpine",
+	"PYTHON":    "python",
+	"GO":        "golang",
+	"GOLANG":    "golang",
+	"RUBY":      "ruby",
+	"RUST":      "rust",
+	"DOTNET":    "mcr.microsoft.com/dotnet/sdk",
+	"KUBECTL":    "bitnami/kubectl",
+	"HELM":       "alpine/helm",
+	"POSTGRES":   "postgres",
+	"MYSQL":      "mysql",
+	"REDIS":      "redis",
+	"NGINX":      "nginx",
+	"SONARQUBE":  "sonarsource/sonar-scanner-cli",
+	"SONAR":      "sonarsource/sonar-scanner-cli",
+	"AWS_CLI":    "amazon/aws-cli",
+	"AWSCLI":     "amazon/aws-cli",
+	"CURL":       "curlimages/curl",
+}
+
+// versionKeySuffixes are the suffixes stripped from a variable name to get its stem.
+var versionKeySuffixes = []string{"_VERSION", "_TAG", "_DIGEST"}
+
+// extractStem strips a known suffix from a variable name and returns the
+// upper-case stem, or "" if no known suffix is present.
+func extractStem(key string) string {
+	upper := strings.ToUpper(key)
+	for _, suffix := range versionKeySuffixes {
+		if strings.HasSuffix(upper, suffix) {
+			return upper[:len(upper)-len(suffix)]
+		}
+	}
+	return ""
+}
 
 // isSHA returns true if the string looks like a full git SHA or docker digest.
 func isSHA(s string) bool {

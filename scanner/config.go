@@ -12,7 +12,7 @@ type Config struct {
 	PinActions  bool              // pin GitHub Actions `uses:` refs
 	PinImages   bool              // pin Docker `image:` refs
 	Exclude     []string          // glob patterns of relative paths to skip
+	TagMappings map[string]string // stem → image overrides for bare-version inputs (e.g. "TF" → "hashicorp/terraform")
 	Output      string            // write output to this file path instead of stdout (optional)
 	Format      string            // output format: "text" (default), "json", or "sarif"
-	TagMappings map[string]string // maps input key names (e.g. NODE_TAG) to image names (e.g. node)
 }
