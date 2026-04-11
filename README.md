@@ -377,6 +377,7 @@ The stem is the key name with `_VERSION`, `_TAG`, or `_DIGEST` stripped (prefix 
 | `TELEGRAF` | `telegraf` |
 | `BASH` | `bash` |
 | `SELENIUM` | `selenium/standalone-chrome` |
+| `SYFT` | `anchore/syft` |
 
 For images not in this list, add a `tag-mappings` entry to `.shapin.json`:
 

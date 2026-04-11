@@ -120,6 +120,7 @@ var builtinStemMappings = map[string]string{
 	"TELEGRAF":     "telegraf",
 	"BASH":         "bash",
 	"SELENIUM":     "selenium/standalone-chrome",
+	"SYFT":         "anchore/syft",
 }
 
 // versionMarkers are the tokens that may appear as a prefix or suffix
