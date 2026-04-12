@@ -28,6 +28,33 @@ Requires Go 1.25+.
 3. Run the tests: `go test ./...`
 4. Open a pull request
 
+## Acceptance requirements
+
+All contributions must meet the following requirements before being merged:
+
+**Code style**
+- Follow standard Go conventions (`gofmt`, `go vet`)
+- Keep functions focused and small — prefer clarity over cleverness
+- Do not introduce new dependencies without prior discussion in an issue
+- New providers must implement the `contract.Provider` interface
+
+**Testing**
+- All new code must be covered by tests
+- New providers require tests in `internal/providers/providers_test.go` using a fake HTTP server (see existing providers for examples)
+- Bug fixes must include a regression test
+- Run the full test suite before submitting: `go test ./...`
+
+**Security**
+- Do not introduce hardcoded credentials, tokens, or secrets
+- New HTTP requests must go through `doWithRetry` and use HTTPS only
+- Path inputs must be validated with `assertWithinRoot`
+
+**Pull request**
+- PRs must target the `main` branch
+- Each PR should address a single concern — split unrelated changes
+- The PR description must explain what changed and why
+- All CI checks (tests, CodeQL, gosec) must pass before review
+
 ## Commit style
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org):
