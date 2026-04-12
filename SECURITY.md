@@ -21,6 +21,24 @@ Include:
 
 You will receive a response within 7 days. If the report is confirmed, a fix will be released as soon as possible and you will be credited in the release notes (unless you prefer to remain anonymous).
 
+## Secrets and Credentials Policy
+
+Shapin does not store, manage, or have custody of any secrets or credentials. API tokens are accepted at runtime via CLI flags or environment variables and are never persisted by the tool.
+
+### Project repository
+
+- No secrets are committed to the repository or its history
+- The CI/CD pipeline uses only the ephemeral `GITHUB_TOKEN` provisioned automatically by GitHub per workflow run, with per-job minimum permissions
+- gosec and CodeQL scan for hardcoded credentials on every commit
+
+### User responsibilities
+
+Users who pass tokens to Shapin (`--github-token`, `--gitlab-token`, `--forgejo-token`) are responsible for their secure handling:
+
+- Pass tokens via environment variables sourced from your secrets store, not as hardcoded values
+- Do not commit `.shapin.json` if it contains token values
+- Rotate tokens immediately if accidental exposure is suspected
+
 ## Vulnerability Disclosure
 
 Once a vulnerability is confirmed and a fix is released, the project will publicly disclose the details through the following channels:
