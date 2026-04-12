@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Kirskov/Shapin.svg)](https://pkg.go.dev/github.com/Kirskov/Shapin)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Kirskov/Shapin)](https://goreportcard.com/report/github.com/Kirskov/Shapin)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/12470/baseline)](https://www.bestpractices.dev/projects/12470)
 
 Pin floating tags in CI workflow files to immutable SHAs, making your pipelines reproducible and immune to tag mutation attacks.
 
@@ -31,6 +32,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 - [When do you need a token?](#when-do-you-need-a-token)
 - [Rate limiting](#rate-limiting)
 - [What it can't do](#what-it-cant-do)
+- [Dependencies](#dependencies)
 
 ## What it does
 
@@ -478,3 +480,13 @@ API calls are automatically retried on HTTP 429 (rate limited) or 503 responses.
 - **`image:` inside a YAML map** — only the simple string form is handled (`image: name:tag`), not `image: { name: ..., tag: ... }`
 - **Branch refs** — pinning `@main` resolves to the current HEAD SHA, which will become stale — use tags when possible
 - **Unknown GitLab CI variable prefixes** — component paths starting with `$SPLIT_GLOBAL_COMPONENT_ROOT` or similar custom variables cannot be resolved
+
+## Dependencies
+
+Shapin has minimal runtime dependencies, all managed via Go modules.
+
+**Selection** — dependencies are chosen to be small, well-maintained, and auditable. The full dependency list with pinned versions and checksums is declared in [`go.mod`](go.mod) and [`go.sum`](go.sum).
+
+**Obtaining** — dependencies are fetched by the Go toolchain (`go mod download`) during development and CI builds. All checksums are verified against `go.sum` and the [Go checksum database](https://sum.golang.org) on every build.
+
+**Tracking** — [Dependabot](https://github.com/Kirskov/Shapin/blob/main/.github/dependabot.yml) is configured to open weekly pull requests for outdated Go module and GitHub Actions dependencies. Security advisories are tracked via GitHub's dependency graph and the `Vulnerabilities` OpenSSF Scorecard check.
