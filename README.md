@@ -537,4 +537,6 @@ Only the **latest release** is actively supported. When a new version is publish
 | Bug fixes | Yes — latest release only |
 | Backports to older releases | No |
 
+**A release stops receiving security updates as soon as a newer version is published.** Users should upgrade to the latest release to remain protected.
+
 For bug reports open a [GitHub Issue](https://github.com/Kirskov/Shapin/issues). For security vulnerabilities follow the [private disclosure process](SECURITY.md). There is no formal LTS program — upgrading is straightforward as Shapin is a single self-contained binary.
