@@ -35,9 +35,10 @@ Shapin uses Grype to scan the SBOM on every CI run. The following thresholds app
 | Low / Negligible | Assessed on a case-by-case basis; documented in `vex.json` if not applicable |
 
 **Process:**
-1. Grype findings are uploaded as SARIF to GitHub Code Scanning on every push
-2. Critical and High findings block the release — the maintainer must either patch the dependency or add a justified `not_affected` entry in `vex.json`
-3. Findings assessed as not exploitable are documented in `vex.json` with a justification and impact statement per the OpenVEX spec
+1. Grype findings are uploaded as SARIF to GitHub Code Scanning on every push to `main`
+2. A dedicated `sca-gate` job runs Grype against the SBOM before every release — Critical and High findings fail the build, blocking the `release` and `docker` jobs from running
+3. To unblock a release, the maintainer must either upgrade the affected dependency or add a justified `not_affected` entry in `vex.json` with an impact statement per the OpenVEX spec
+4. The `vex.json` file is passed to Grype during the gate check so documented non-applicable findings do not block the release
 
 ### Licenses
 
