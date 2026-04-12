@@ -8,7 +8,12 @@ Only the latest release receives security fixes.
 
 Please **do not** open a public issue for security vulnerabilities.
 
-Report them privately by emailing security.fountain045@passmail.net Include:
+Report them privately using one of the following methods:
+
+- **GitHub private disclosure**: use the [Report a vulnerability](https://github.com/Kirskov/Shapin/security/advisories/new) button on the Security tab
+- **Email**: security.fountain045@passmail.net
+
+Include:
 
 - A description of the vulnerability
 - Steps to reproduce
