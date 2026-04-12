@@ -47,6 +47,12 @@ jobs:
         with:
           subject-path: dist/*
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+
       - name: Generate checksums
         run: |
           cd dist
