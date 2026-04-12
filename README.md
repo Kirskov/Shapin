@@ -34,6 +34,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 - [Rate limiting](#rate-limiting)
 - [What it can't do](#what-it-cant-do)
 - [Dependencies](#dependencies)
+- [Support](#support)
 - [Architecture](ARCHITECTURE.md)
 
 ## What it does
@@ -525,3 +526,15 @@ Shapin has minimal runtime dependencies, all managed via Go modules.
 **Obtaining** — dependencies are fetched by the Go toolchain (`go mod download`) during development and CI builds. All checksums are verified against `go.sum` and the [Go checksum database](https://sum.golang.org) on every build.
 
 **Tracking** — [Dependabot](https://github.com/Kirskov/Shapin/blob/main/.github/dependabot.yml) is configured to open weekly pull requests for outdated Go module and GitHub Actions dependencies. Security advisories are tracked via GitHub's dependency graph and the `Vulnerabilities` OpenSSF Scorecard check.
+
+## Support
+
+Only the **latest release** is actively supported. When a new version is published, the previous release is no longer maintained.
+
+| Type | Included |
+|---|---|
+| Security vulnerability fixes | Yes — latest release only |
+| Bug fixes | Yes — latest release only |
+| Backports to older releases | No |
+
+For bug reports open a [GitHub Issue](https://github.com/Kirskov/Shapin/issues). For security vulnerabilities follow the [private disclosure process](SECURITY.md). There is no formal LTS program — upgrading is straightforward as Shapin is a single self-contained binary.
