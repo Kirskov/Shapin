@@ -33,6 +33,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 - [Rate limiting](#rate-limiting)
 - [What it can't do](#what-it-cant-do)
 - [Dependencies](#dependencies)
+- [Architecture](ARCHITECTURE.md)
 
 ## What it does
 
