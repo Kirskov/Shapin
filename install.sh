@@ -83,9 +83,15 @@ verify_checksum() {
 # ── Fetch latest release tag ─────────────────────────────────────────────────
 
 latest_version() {
-  curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep '"tag_name"' \
-    | sed 's/.*"tag_name": *"\(.*\)".*/\1/'
+  if [ -n "$GITHUB_TOKEN" ]; then
+    curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "https://api.github.com/repos/${REPO}/releases/latest" \
+      | grep '"tag_name"' \
+      | sed 's/.*"tag_name": *"\(.*\)".*/\1/'
+  else
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+      | grep '"tag_name"' \
+      | sed 's/.*"tag_name": *"\(.*\)".*/\1/'
+  fi
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────

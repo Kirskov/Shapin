@@ -80,6 +80,12 @@ curl -fsSL https://raw.githubusercontent.com/Kirskov/Shapin/df97d9b9fd31e5e9ac80
 
 The script URL is pinned to a commit SHA so the install script itself cannot be tampered with. Supports Ubuntu, Debian, Kali, Arch, Alpine, Red Hat, Fedora, and macOS. The script will automatically detect your OS and architecture, download the correct binary, and install it to `/usr/local/bin`.
 
+If you hit GitHub API rate limits (common on shared corporate networks), pass a [personal access token](https://github.com/settings/tokens) with the `public_repo` scope:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Kirskov/Shapin/df97d9b9fd31e5e9ac80b2257d3eae7d7628509d/install.sh | GITHUB_TOKEN=ghp_xxx sh
+```
+
 To install a specific version, use the [Manual](#manual) method below.
 
 ### Manual
