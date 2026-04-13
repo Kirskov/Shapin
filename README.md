@@ -89,7 +89,7 @@ Download the binary for your platform from the [releases page](https://github.co
 
 ```sh
 # Example for Linux amd64
-curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v0.6.3/shapin-linux-amd64 -o shapin
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.3/shapin-v1.2.3-linux-amd64 -o shapin
 gh attestation verify shapin --repo Kirskov/Shapin
 chmod +x shapin
 sudo mv shapin /usr/local/bin/
@@ -100,13 +100,13 @@ sudo mv shapin /usr/local/bin/
 Images are published to GHCR and available for `linux/amd64` and `linux/arm64`. Always reference by digest, not tag:
 
 ```sh
-docker run --rm -v $(pwd):/repo ghcr.io/kirskov/shapin@sha256:ee76782a3e71fb6dea2307cba2921929b339bc38baaab47f0027ef0f6028e6e0 # v0.7.7 --path /repo
+docker run --rm -v $(pwd):/repo ghcr.io/kirskov/shapin@sha256:931294ebacbf15d60380a483a28a06881c085e16e4168e8e352e848476f370a0 # v1.2.3 --path /repo
 ```
 
 Apply changes (disable dry-run):
 
 ```sh
-docker run --rm -v $(pwd):/repo ghcr.io/kirskov/shapin@sha256:ee76782a3e71fb6dea2307cba2921929b339bc38baaab47f0027ef0f6028e6e0 # v0.7.7 --path /repo --dry-run=false
+docker run --rm -v $(pwd):/repo ghcr.io/kirskov/shapin@sha256:931294ebacbf15d60380a483a28a06881c085e16e4168e8e352e848476f370a0 # v1.2.3 --path /repo --dry-run=false
 ```
 
 With API tokens:
@@ -116,7 +116,7 @@ docker run --rm \
   -v $(pwd):/repo \
   -e GITHUB_TOKEN=ghp_xxx \
   -e GITLAB_TOKEN=glpat_xxx \
-  ghcr.io/kirskov/shapin@sha256:ee76782a3e71fb6dea2307cba2921929b339bc38baaab47f0027ef0f6028e6e0 # v0.7.7 --path /repo
+  ghcr.io/kirskov/shapin@sha256:931294ebacbf15d60380a483a28a06881c085e16e4168e8e352e848476f370a0 # v1.2.3 --path /repo
 ```
 
 The digest for each release is listed on the [releases page](https://github.com/Kirskov/Shapin/releases). Update the digest when upgrading to a new version.
@@ -127,9 +127,9 @@ Images are signed with [cosign](https://github.com/sigstore/cosign) keyless sign
 
 ```sh
 cosign verify \
-  --certificate-identity "https://github.com/Kirskov/Shapin/.github/workflows/release.yml@refs/tags/v0.7.7" \
+  --certificate-identity "https://github.com/Kirskov/Shapin/.github/workflows/release.yml@refs/tags/v1.2.3" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  ghcr.io/kirskov/shapin@sha256:ee76782a3e71fb6dea2307cba2921929b339bc38baaab47f0027ef0f6028e6e0 # v0.7.7
+  ghcr.io/kirskov/shapin@sha256:931294ebacbf15d60380a483a28a06881c085e16e4168e8e352e848476f370a0 # v1.2.3
 ```
 
 ### Verify release integrity
@@ -140,20 +140,20 @@ Every release asset can be verified using three independent mechanisms:
 
 ```sh
 # Download the binary and checksum file
-curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.0/shapin-v1.2.0-linux-amd64 -o shapin
-curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.0/checksums.txt -o checksums.txt
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.3/shapin-v1.2.3-linux-amd64 -o shapin
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.3/checksums.txt -o checksums.txt
 
-# Verify (expected output: "shapin-v1.2.0-linux-amd64: OK")
+# Verify (expected output: "shapin-v1.2.3-linux-amd64: OK")
 sha256sum --ignore-missing -c checksums.txt
 ```
 
 **2. cosign bundle signature** — each binary is signed with [cosign](https://github.com/sigstore/cosign) keyless signing via the Sigstore transparency log:
 
 ```sh
-curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.0/shapin-v1.2.0-linux-amd64.bundle -o shapin.bundle
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.2.3/shapin-v1.2.3-linux-amd64.bundle -o shapin.bundle
 cosign verify-blob shapin \
   --bundle shapin.bundle \
-  --certificate-identity "https://github.com/Kirskov/Shapin/.github/workflows/release.yml@refs/tags/v1.2.0" \
+  --certificate-identity "https://github.com/Kirskov/Shapin/.github/workflows/release.yml@refs/tags/v1.2.3" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 # Expected output: Verified OK
 ```
