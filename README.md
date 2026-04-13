@@ -49,6 +49,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
 | GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
 | GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
+| GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # 24.13.0` |
 
 Already-pinned refs and digests are left untouched. Every provider checks pinned SHAs against their current tag — a warning is printed if the tag has been moved to a different commit (drift detection).
 
@@ -429,6 +430,26 @@ For images not in this list, add a `tag-mappings` entry to `.shapin.json`:
 ```
 
 User-supplied mappings override the built-ins.
+
+#### Dependency proxy
+
+Images pulled through the [GitLab Dependency Proxy](https://docs.gitlab.com/ee/user/packages/dependency_proxy/) use a CI variable as their registry prefix:
+
+```yaml
+image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0-alpine3.23
+image: ${CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX}/alpine:3.20
+```
+
+Shapin automatically strips the proxy prefix and resolves the underlying Docker Hub image to a digest:
+
+```yaml
+image: node@sha256:cd6fb7... # 24.13.0-alpine3.23
+image: alpine@sha256:... # 3.20
+```
+
+Both `${VAR}/` and `$VAR/` syntaxes are supported for `CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX` and `CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX`.
+
+> **Note:** The GitLab Dependency Proxy only supports Docker Hub images. Shapin resolves the stripped image name against Docker Hub, which matches what the proxy itself does.
 
 **Limitations:**
 - `extends:` and `!reference` template includes are not followed

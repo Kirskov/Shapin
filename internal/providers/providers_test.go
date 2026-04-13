@@ -818,6 +818,59 @@ func TestDockerResolverSkipsDigest(t *testing.T) {
 	}
 }
 
+// ── stripDependencyProxyPrefix ───────────────────────────────────────────────
+
+func TestStripDependencyProxyPrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		want    string
+		changed bool
+	}{
+		{
+			name:    "brace syntax group prefix",
+			input:   "image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0-alpine3.23\n",
+			want:    "image: node:24.13.0-alpine3.23\n",
+			changed: true,
+		},
+		{
+			name:    "brace syntax direct group prefix",
+			input:   "image: ${CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX}/alpine:3.20\n",
+			want:    "image: alpine:3.20\n",
+			changed: true,
+		},
+		{
+			name:    "bare dollar syntax",
+			input:   "image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/python:3.12\n",
+			want:    "image: python:3.12\n",
+			changed: true,
+		},
+		{
+			name:    "no proxy prefix",
+			input:   "image: node:24.13.0-alpine3.23\n",
+			want:    "image: node:24.13.0-alpine3.23\n",
+			changed: false,
+		},
+		{
+			name:    "unrelated variable",
+			input:   "image: ${SOME_OTHER_VAR}/node:24.13.0\n",
+			want:    "image: ${SOME_OTHER_VAR}/node:24.13.0\n",
+			changed: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := stripDependencyProxyPrefix(tc.input)
+			if got != tc.want {
+				t.Errorf("content: got %q, want %q", got, tc.want)
+			}
+			if changed != tc.changed {
+				t.Errorf("changed: got %v, want %v", changed, tc.changed)
+			}
+		})
+	}
+}
+
 // ── doWithRetry ───────────────────────────────────────────────────────────────
 
 func TestDoWithRetryOn429(t *testing.T) {

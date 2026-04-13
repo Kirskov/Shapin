@@ -38,6 +38,30 @@ func Ansi(code string) string {
 	return ""
 }
 
+// gitlabDependencyProxyVars are the predefined GitLab CI variables that expand
+// to a dependency proxy image prefix (e.g. "gitlab.example.com/group/dependency_proxy/containers").
+// When used as `image: ${VAR}/alpine:3.20`, the actual image pulled is `alpine:3.20`
+// from Docker Hub. Shapin strips these prefixes before resolving the image.
+var gitlabDependencyProxyVars = []string{
+	"${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}",
+	"${CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX}",
+	"$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX",
+	"$CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX",
+}
+
+// stripDependencyProxyPrefix removes a known GitLab dependency proxy variable
+// prefix (e.g. "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/") from content,
+// returning the stripped content and whether a substitution occurred.
+func stripDependencyProxyPrefix(content string) (string, bool) {
+	for _, v := range gitlabDependencyProxyVars {
+		prefix := v + "/"
+		if strings.Contains(content, prefix) {
+			return strings.ReplaceAll(content, prefix, ""), true
+		}
+	}
+	return content, false
+}
+
 // Regex pattern constants — centralised so no pattern is duplicated across files.
 const (
 	patternSHA          = `^[0-9a-f]{40}$`

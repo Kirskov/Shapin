@@ -40,9 +40,12 @@ func newDockerResolver(registryToken string) *dockerResolver {
 
 // resolveImages replaces `image: name:tag` with `image: name@sha256:xxx # tag`
 // in the given content. Non-fatal: leaves unresolvable images untouched.
+// GitLab dependency proxy prefixes (e.g. ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/)
+// are stripped before resolution so the underlying Docker Hub image is pinned.
 func (d *dockerResolver) resolveImages(content string) string {
 	d.warnIfDrifted(content)
-	return dockerImageRegex.ReplaceAllStringFunc(content, d.pinImage)
+	stripped, _ := stripDependencyProxyPrefix(content)
+	return dockerImageRegex.ReplaceAllStringFunc(stripped, d.pinImage)
 }
 
 // warnIfDrifted checks already-pinned image digests and warns if the tag now
