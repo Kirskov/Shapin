@@ -47,7 +47,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | Docker image (`image: name:`) | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev:2.2.1` | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev@sha256:180ef5... # 2.2.1` |
 | Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
 | GitLab component ref | `component: gitlab.com/group/proj/name@v1.0.0` | `component: gitlab.com/group/proj/name@abc1234... # v1.0.0` |
-| GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
+| GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # aquasec/trivy:0.69.3` |
 | GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
 | GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
 | GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # 24.13.0` |
