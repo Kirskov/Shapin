@@ -51,8 +51,10 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
 | GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
 | GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # 24.13.0` |
+| GitLab `services:` (bare) | `- postgres:15` | `- postgres@sha256:abc123... # 15` |
+| GitLab `services:` (map) | `- name: redis:7` | `- name: redis@sha256:def456... # 7` |
 
-Already-pinned refs and digests are left untouched. Every provider checks pinned SHAs against their current tag — a warning is printed if the tag has been moved to a different commit (drift detection).
+Already-pinned refs and digests are left untouched. Every provider checks pinned SHAs against their current tag — a warning is printed if the tag has been moved to a different commit (drift detection). Using `latest` as a tag also prints a warning.
 
 ## Supported files
 
@@ -468,6 +470,28 @@ image:
 image:
   name: maildev/maildev@sha256:180ef5... # 2.2.1
   entrypoint: [""]
+```
+
+#### Services
+
+Docker images in `services:` blocks are pinned, both the bare form and the `name:` map form:
+
+```yaml
+services:
+  - postgres:15
+  - name: redis:7
+    alias: cache
+# →
+services:
+  - postgres@sha256:abc123... # 15
+  - name: redis@sha256:def456... # 7
+    alias: cache
+```
+
+**`latest` warning:**
+Using `latest` as a tag is not pinnable to a meaningful digest — a warning is printed on stderr and the image is left untouched:
+```
+warn: docker image postgres:latest: avoid 'latest' — pin to an explicit tag
 ```
 
 **Limitations:**
