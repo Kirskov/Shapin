@@ -48,8 +48,8 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
 | GitLab component ref | `component: gitlab.com/group/proj/name@v1.0.0` | `component: gitlab.com/group/proj/name@abc1234... # v1.0.0` |
 | GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # 0.69.3` |
-| GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
-| GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # 1.14.8"` |
+| GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
+| GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
 | GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # 24.13.0` |
 | GitLab `services:` (bare) | `- postgres:15` | `- postgres@sha256:abc123... # 15` |
 | GitLab `services:` (map) | `- name: redis:7` | `- name: redis@sha256:def456... # 7` |
@@ -228,7 +228,7 @@ To upgrade a pinned ref to a newer version, update it and rerun `shapin`.
 
 ```yaml
 # before (pinned)
-TF_DIGEST: "sha256:6bbb82... # 1.14.8"
+TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"
 # edit to
 TF_DIGEST: "1.15.0"
 ```
@@ -368,8 +368,8 @@ SCANNER_TAG: myregistry.com/custom-scanner:1.2.3
 **2. Bare version values** — keys ending or starting with `_VERSION`, `_TAG`, or `_DIGEST` whose stem matches a built-in or user-supplied image mapping. The key is renamed to use `_DIGEST`:
 
 ```yaml
-TF_VERSION: '1.13.5'     # → TF_DIGEST: 'sha256:...' # 1.13.5
-VERSION_TF: '1.13.5'     # → DIGEST_TF: 'sha256:...' # 1.13.5
+TF_VERSION: '1.13.5'     # → TF_DIGEST: 'sha256:...' # hashicorp/terraform:1.13.5
+VERSION_TF: '1.13.5'     # → DIGEST_TF: 'sha256:...' # hashicorp/terraform:1.13.5
 ```
 
 Values starting with `$` (CI variable interpolation) or already containing a digest are left untouched.

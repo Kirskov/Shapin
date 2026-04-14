@@ -148,7 +148,7 @@ func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
 	if !strings.Contains(got, "sha256:terraform01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.14.8") {
+	if !strings.Contains(got, "# hashicorp/terraform:1.14.8") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -213,7 +213,7 @@ func TestGitLabRepinsDigestKeyWithBareVersion(t *testing.T) {
 	if !strings.Contains(got, "sha256:") {
 		t.Errorf("expected TF_DIGEST bare version to be pinned, got:\n%s", got)
 	}
-	if !strings.Contains(got, "# 1.14.8") {
+	if !strings.Contains(got, "# hashicorp/terraform:1.14.8") {
 		t.Errorf("expected original version in comment, got:\n%s", got)
 	}
 	if !strings.Contains(got, "TF_DIGEST:") {
@@ -270,7 +270,7 @@ func TestGitLabPinsVersionInputWithIntermediateSuffix(t *testing.T) {
 	if !strings.Contains(got, "sha256:node000001") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 24.14.1-alpine3.23") {
+	if !strings.Contains(got, "# node:24.14.1-alpine3.23") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -309,7 +309,7 @@ func TestGitLabMixedPinnedAndUnpinnedInputs(t *testing.T) {
 	if !strings.Contains(got, "sha256:node000002") {
 		t.Errorf("expected NODE_IMAGE_DIGEST to be pinned, got:\n%s", got)
 	}
-	if !strings.Contains(got, "# 24.14.1-alpine3.23") {
+	if !strings.Contains(got, "# node:24.14.1-alpine3.23") {
 		t.Errorf(wantTagAsComment, got)
 	}
 	// Already-pinned inputs must be left untouched
@@ -426,18 +426,18 @@ include:
 	}
 
 	// Version inputs must be renamed to DIGEST and pinned.
-	pinned := []struct{ digestKey, version string }{
-		{"TF_DIGEST", "1.13.5"},
-		{"TRIVY_DIGEST", "0.69.1"},
-		{"NODE_DIGEST", "24.13.0"},
-		{"ALPINE_DIGEST", "3.23"},
+	pinned := []struct{ digestKey, comment string }{
+		{"TF_DIGEST", "# hashicorp/terraform:1.13.5"},
+		{"TRIVY_DIGEST", "# aquasec/trivy:0.69.1"},
+		{"NODE_DIGEST", "# node:24.13.0"},
+		{"ALPINE_DIGEST", "# alpine:3.23"},
 	}
 	for _, c := range pinned {
 		if !strings.Contains(got, c.digestKey+":") {
 			t.Errorf("expected key %s in output, got:\n%s", c.digestKey, got)
 		}
-		if !strings.Contains(got, "# "+c.version) {
-			t.Errorf("expected version comment # %s in output, got:\n%s", c.version, got)
+		if !strings.Contains(got, c.comment) {
+			t.Errorf("expected comment %s in output, got:\n%s", c.comment, got)
 		}
 	}
 	// Original _VERSION keys must be gone.

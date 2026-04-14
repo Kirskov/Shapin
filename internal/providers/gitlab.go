@@ -282,7 +282,7 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 			return match
 		}
 		digestKey := toDigestKey(key)
-		return fmt.Sprintf("%s%s: %s%s%s # %s", indent, digestKey, quoteOpen, digest, quoteClose, version)
+		return fmt.Sprintf("%s%s: %s%s%s # %s:%s", indent, digestKey, quoteOpen, digest, quoteClose, image, version)
 	})
 }
 
