@@ -384,6 +384,50 @@ func TestGitLabMixedPinnedAndUnpinnedInputs(t *testing.T) {
 	}
 }
 
+func TestGitLabPinsTriggerInputs(t *testing.T) {
+	// trigger: inputs: TF_VERSION and TRIVY_TAG must be pinned just like top-level inputs.
+	digests := map[string]string{
+		imageTerraform: "sha256:tf000099",
+		imageTrivy:     "sha256:trivy099",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, digestForPath(r.URL.Path, digests))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := `deploy:
+  trigger:
+    project: my-group/my-project
+    inputs:
+      TF_VERSION: "1.14.8"
+      TRIVY_TAG: aquasec/trivy:0.69.3
+`
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:tf000099") {
+		t.Errorf("expected TF_VERSION to be pinned via trigger inputs, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# hashicorp/terraform:1.14.8") {
+		t.Errorf("expected terraform comment in trigger inputs, got:\n%s", got)
+	}
+	if !strings.Contains(got, "sha256:trivy099") {
+		t.Errorf("expected TRIVY_TAG to be pinned via trigger inputs, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# aquasec/trivy:0.69.3") {
+		t.Errorf("expected trivy comment in trigger inputs, got:\n%s", got)
+	}
+}
+
 func TestExtractStem(t *testing.T) {
 	cases := []struct {
 		key  string
