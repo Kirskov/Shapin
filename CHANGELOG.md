@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.5](https://github.com/Kirskov/Shapin/compare/v1.3.4...v1.3.5) (2026-04-14)
+
+
+### Bug Fixes
+
+* disable sbom-action auto-upload to avoid immutable release error  ([#18](https://github.com/Kirskov/Shapin/issues/18)) ([32cf861](https://github.com/Kirskov/Shapin/commit/32cf86176aec1d0776f7e406ac8d1c05def105bb))
+
 ## [1.3.4](https://github.com/Kirskov/Shapin/compare/v1.3.3...v1.3.4) (2026-04-14)
 
 
