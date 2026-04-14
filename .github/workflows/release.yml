@@ -76,6 +76,7 @@ jobs:
         with:
           format: spdx-json
           output-file: dist/sbom.spdx.json
+          upload-release-assets: false
 
       - name: Copy VEX document
         run: cp vex.json dist/vex.json
