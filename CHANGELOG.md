@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.6](https://github.com/Kirskov/Shapin/compare/v1.3.5...v1.3.6) (2026-04-14)
+
+
+### Bug Fixes
+
+* skip GitHub release creation in release-please ([#20](https://github.com/Kirskov/Shapin/issues/20)) ([bd78c63](https://github.com/Kirskov/Shapin/commit/bd78c63c733ab59340028498e7c97aea3e51806b))
+
 ## [1.3.5](https://github.com/Kirskov/Shapin/compare/v1.3.4...v1.3.5) (2026-04-14)
 
 
