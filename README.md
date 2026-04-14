@@ -579,6 +579,7 @@ API calls are automatically retried on HTTP 429 (rate limited) or 503 responses.
 - **Private Docker registries** — only public registries (Docker Hub, GHCR, Quay.io, etc.) are supported
 - **Branch refs** — pinning `@main` resolves to the current HEAD SHA, which will become stale — use tags when possible
 - **Unknown GitLab CI variable prefixes** — component paths starting with `$SPLIT_GLOBAL_COMPONENT_ROOT` or similar custom variables cannot be resolved
+- **`parallel: matrix:` image arrays** — matrix values are CI variables resolved at runtime; Shapin cannot pin array entries like `IMAGE: [alpine:3.20, debian:12]`
 
 ## Dependencies
 
