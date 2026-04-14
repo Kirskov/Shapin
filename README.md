@@ -43,16 +43,16 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 |---|---|---|
 | GitHub Action | `uses: actions/checkout@v4` | `uses: actions/checkout@abc1234... # v4` |
 | Forgejo Action | `uses: actions/checkout@v1` | `uses: actions/checkout@abc1234... # v1` |
-| Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # 2.2.1` |
-| Docker image (`image: name:`) | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev:2.2.1` | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev@sha256:180ef5... # 2.2.1` |
-| Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # 1.24-alpine AS builder` |
+| Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # maildev/maildev:2.2.1` |
+| Docker image (`image: name:`) | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev:2.2.1` | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev@sha256:180ef5... # maildev/maildev:2.2.1` |
+| Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # golang:1.24-alpine AS builder` |
 | GitLab component ref | `component: gitlab.com/group/proj/name@v1.0.0` | `component: gitlab.com/group/proj/name@abc1234... # v1.0.0` |
 | GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # aquasec/trivy:0.69.3` |
 | GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
 | GitLab trigger input | `TF_VERSION: "1.14.8"` (under `inputs:`) | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
-| GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # 24.13.0` |
-| GitLab `services:` (bare) | `- postgres:15` | `- postgres@sha256:abc123... # 15` |
-| GitLab `services:` (map) | `- name: redis:7` | `- name: redis@sha256:def456... # 7` |
+| GitLab dependency proxy | `image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:24.13.0` | `image: node@sha256:cd6fb7... # node:24.13.0` |
+| GitLab `services:` (bare) | `- postgres:15` | `- postgres@sha256:abc123... # postgres:15` |
+| GitLab `services:` (map) | `- name: redis:7` | `- name: redis@sha256:def456... # redis:7` |
 
 Already-pinned refs and digests are left untouched. Every provider checks pinned SHAs against their current tag — a warning is printed if the tag has been moved to a different commit (drift detection). Using `latest` as a tag also prints a warning.
 
@@ -362,7 +362,7 @@ Two patterns are detected at any nesting level across the entire file:
 
 ```yaml
 SCANNER_TAG: myregistry.com/custom-scanner:1.2.3
-# → SCANNER_TAG: myregistry.com/custom-scanner@sha256:... # 1.2.3
+# → SCANNER_TAG: myregistry.com/custom-scanner@sha256:... # myregistry.com/custom-scanner:1.2.3
 ```
 
 **2. Bare version values** — keys ending or starting with `_VERSION`, `_TAG`, or `_DIGEST` whose stem matches a built-in or user-supplied image mapping. The key is renamed to use `_DIGEST`:
@@ -452,8 +452,8 @@ image: ${CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX}/alpine:3.20
 Shapin automatically strips the proxy prefix and resolves the underlying Docker Hub image to a digest:
 
 ```yaml
-image: node@sha256:cd6fb7... # 24.13.0-alpine3.23
-image: alpine@sha256:... # 3.20
+image: node@sha256:cd6fb7... # node:24.13.0-alpine3.23
+image: alpine@sha256:... # alpine:3.20
 ```
 
 Both `${VAR}/` and `$VAR/` syntaxes are supported for `CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX` and `CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX`.
@@ -468,7 +468,7 @@ image:
   entrypoint: [""]
 # →
 image:
-  name: maildev/maildev@sha256:180ef5... # 2.2.1
+  name: maildev/maildev@sha256:180ef5... # maildev/maildev:2.2.1
   entrypoint: [""]
 ```
 
@@ -483,8 +483,8 @@ services:
     alias: cache
 # →
 services:
-  - postgres@sha256:abc123... # 15
-  - name: redis@sha256:def456... # 7
+  - postgres@sha256:abc123... # postgres:15
+  - name: redis@sha256:def456... # redis:7
     alias: cache
 ```
 
@@ -546,7 +546,7 @@ Pins `FROM image:tag` lines to digests at any depth. The `AS alias` is preserved
 
 ```dockerfile
 FROM golang:1.24-alpine AS builder
-# → FROM golang@sha256:... # 1.24-alpine AS builder
+# → FROM golang@sha256:... # golang:1.24-alpine AS builder
 ```
 
 `FROM scratch` is left untouched.
