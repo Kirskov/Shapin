@@ -121,6 +121,72 @@ func TestIsGitLabCI(t *testing.T) {
 	}
 }
 
+// ── GitLab image:tag variable pinning (TAG keys) ─────────────────────────────
+
+func TestGitLabPinsImageTagVariable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:trivy001")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "variables:\n  TRIVY_TAG: aquasec/trivy:0.69.3\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:trivy001") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# aquasec/trivy:0.69.3") {
+		t.Errorf("expected comment to include image name and tag, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageTagVariableLatest(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "variables:\n  SCANNER_TAG: aquasec/trivy:latest\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected 'latest' TAG variable to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageTagVariableAlreadyPinned(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "variables:\n  SCANNER_TAG: aquasec/trivy@sha256:abc123\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected already-pinned TAG variable to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabDoesNotPinNonTagKey(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	// Key does not contain TAG — must not be touched even if value looks like image:tag
+	content := "variables:\n  SCANNER_IMAGE: aquasec/trivy:0.69.3\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "sha256:") {
+		t.Errorf("expected non-TAG key to be left untouched, got:\n%s", got)
+	}
+}
+
 // ── GitLab version input pinning ─────────────────────────────────────────────
 
 func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
