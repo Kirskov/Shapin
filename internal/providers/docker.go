@@ -90,7 +90,13 @@ func (d *dockerResolver) pinImage(match string) string {
 		fmt.Fprintf(os.Stderr, "  warn: docker image %s:%s: %v\n", strippedImage, tag, err)
 		return match
 	}
-	return fmt.Sprintf("%s%s@%s%s # %s", prefix, strippedImage, digest, suffix, tag)
+	// Preserve the dependency proxy variable prefix in the output so the
+	// pipeline continues to pull through the proxy.
+	outputImage := strippedImage
+	if isProxy {
+		outputImage = proxyVar + strippedImage
+	}
+	return fmt.Sprintf("%s%s@%s%s # %s", prefix, outputImage, digest, suffix, tag)
 }
 
 // fetchDigest fetches the docker content digest for image:tag.
