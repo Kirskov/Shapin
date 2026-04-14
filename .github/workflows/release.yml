@@ -93,7 +93,7 @@ jobs:
       - name: Sign release artifacts
         run: |
           for f in dist/*; do
-            cosign sign-blob --yes --bundle "${f}.bundle" --output-signature "${f}.sig" "$f"
+            cosign sign-blob --yes --new-bundle-format=false --bundle "${f}.bundle" --output-signature "${f}.sig" "$f"
           done
 
       - name: Generate changelog
