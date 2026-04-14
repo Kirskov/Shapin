@@ -798,6 +798,55 @@ func TestGitHubResolverPinImages(t *testing.T) {
 	}
 }
 
+func TestGitLabPinsImageWithDependencyProxyPrefix(t *testing.T) {
+	// Regression test: when an image uses a dependency proxy variable prefix
+	// (e.g. image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.20),
+	// the pinned output must preserve the proxy prefix — it must not be stripped.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:alpine001")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "brace syntax group prefix",
+			content: "  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.20\n",
+			want:    "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine@sha256:alpine001",
+		},
+		{
+			name:    "bare dollar syntax",
+			content: "  image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/alpine:3.20\n",
+			want:    "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/alpine@sha256:alpine001",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := p.Resolve(c.content, false, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(got, c.want) {
+				t.Errorf("expected proxy prefix preserved in output, want substring %q, got:\n%s", c.want, got)
+			}
+			if !strings.Contains(got, "# 3.20") {
+				t.Errorf(wantTagAsComment, got)
+			}
+		})
+	}
+}
+
 // ── dockerResolver ───────────────────────────────────────────────────────────
 
 func TestDockerResolverSkipsLatest(t *testing.T) {
