@@ -847,6 +847,90 @@ func TestGitLabPinsImageWithDependencyProxyPrefix(t *testing.T) {
 	}
 }
 
+// ── GitLab extended image syntax (image: {name: ...}) ────────────────────────
+
+func TestGitLabPinsImageNameSubkey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:namekey01")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "image:\n  name: myregistry.example.com/myimage:1.0.0\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:namekey01") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 1.0.0") {
+		t.Errorf(wantTagAsComment, got)
+	}
+}
+
+func TestGitLabPinsImageNameSubkeyWithEntrypoint(t *testing.T) {
+	// Extended image syntax with entrypoint — name: must be pinned, entrypoint untouched.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:namekey02")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "image:\n  name: myregistry.example.com/myimage:2.3.4\n  entrypoint: [\"/bin/sh\", \"-c\"]\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:namekey02") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# 2.3.4") {
+		t.Errorf(wantTagAsComment, got)
+	}
+	if !strings.Contains(got, "entrypoint: [\"/bin/sh\", \"-c\"]") {
+		t.Errorf("expected entrypoint to be preserved, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageNameSubkeyLatest(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "image:\n  name: myregistry.example.com/myimage:latest\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected 'latest' in name: to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageNameSubkeyAlreadyPinned(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "image:\n  name: myregistry.example.com/myimage@sha256:abc123\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected already-pinned name: to be skipped, got:\n%s", got)
+	}
+}
+
 // ── dockerResolver ───────────────────────────────────────────────────────────
 
 func TestDockerResolverSkipsLatest(t *testing.T) {

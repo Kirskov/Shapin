@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -20,6 +21,10 @@ const (
 // Matches `image: registry/name:tag` (with optional quotes).
 // Does not match digest refs (image@sha256:...) — those are already pinned.
 var dockerImageRegex = mustCompile(patternDockerImage)
+
+// dockerNameRegex matches `name: registry/name:tag` — used by GitLab CI's
+// extended image syntax where `image:` is a mapping with a `name:` sub-key.
+var dockerNameRegex = mustCompile(patternDockerName)
 
 // dockerPinnedRegex matches already-pinned `image: name@sha256:digest # tag`.
 var dockerPinnedRegex = mustCompile(patternDockerPinned)
@@ -42,7 +47,24 @@ func newDockerResolver(registryToken string) *dockerResolver {
 // in the given content. Non-fatal: leaves unresolvable images untouched.
 func (d *dockerResolver) resolveImages(content string) string {
 	d.warnIfDrifted(content)
-	return dockerImageRegex.ReplaceAllStringFunc(content, d.pinImage)
+	return d.pinImageRefs(dockerImageRegex, content)
+}
+
+// resolveImageNames replaces `name: name:tag` with `name: name@sha256:xxx # tag`
+// for GitLab CI's extended image syntax (image: {name: ..., entrypoint: ...}).
+func (d *dockerResolver) resolveImageNames(content string) string {
+	return d.pinImageRefs(dockerNameRegex, content)
+}
+
+// pinImageRefs pins all image references matched by re in content.
+func (d *dockerResolver) pinImageRefs(re *regexp.Regexp, content string) string {
+	return re.ReplaceAllStringFunc(content, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) < 6 {
+			return match
+		}
+		return d.pinImageParts(match, parts)
+	})
 }
 
 // warnIfDrifted checks already-pinned image digests and warns if the tag now
@@ -55,11 +77,7 @@ func (d *dockerResolver) warnIfDrifted(content string) {
 	}).checkAll(content)
 }
 
-func (d *dockerResolver) pinImage(match string) string {
-	parts := dockerImageRegex.FindStringSubmatch(match)
-	if len(parts) < 6 {
-		return match
-	}
+func (d *dockerResolver) pinImageParts(match string, parts []string) string {
 	// parts[1]=prefix (e.g. "  image: "), parts[2]=optional proxy var prefix,
 	// parts[3]=image name, parts[4]=tag, parts[5]=closing quote
 	prefix, proxyVar, image, tag, suffix := parts[1], parts[2], parts[3], parts[4], parts[5]

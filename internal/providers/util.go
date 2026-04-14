@@ -67,6 +67,7 @@ func stripDependencyProxyPrefix(imageRef string) (string, bool) {
 const (
 	patternSHA          = `^[0-9a-f]{40}$`
 	patternDockerImage  = `(?m)^([^#\n]*image:\s+['"]?)(\$\{[A-Z0-9_]+\}/|\$[A-Z0-9_]+/)?([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`
+	patternDockerName   = `(?m)^([^#\n]*name:\s+['"]?)(\$\{[A-Z0-9_]+\}/|\$[A-Z0-9_]+/)?([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`
 	patternDockerPinned = `image:\s+['"]?([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)['"]?\s+#\s+(\S+)`
 	patternFromLine     = `(?m)^(FROM\s+)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(\s|$)`
 	patternFromPinned   = `(?m)^FROM\s+([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s+#\s+(\S+)`
