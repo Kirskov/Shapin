@@ -438,6 +438,36 @@ func TestGitLabPinsDefaultBlockImage(t *testing.T) {
 	}
 }
 
+func TestGitLabPinsDefaultBlockServices(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:default002")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "default:\n  image: golang:1.24\n  services:\n    - postgres:15\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(got, "sha256:default002") != 2 {
+		t.Errorf("expected both image and service to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# golang:1.24") {
+		t.Errorf("expected image comment, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# postgres:15") {
+		t.Errorf("expected service comment, got:\n%s", got)
+	}
+}
+
 func TestGitLabPinsTriggerInputs(t *testing.T) {
 	// trigger: inputs: TF_VERSION and TRIVY_TAG must be pinned just like top-level inputs.
 	digests := map[string]string{
