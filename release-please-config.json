@@ -1,7 +1,0 @@
-{
-  "release-type": "go",
-  "signoff": "github-actions[bot] <github-actions[bot]@users.noreply.github.com>",
-  "packages": {
-    ".": {}
-  }
-}
