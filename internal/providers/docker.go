@@ -158,7 +158,7 @@ func (d *dockerResolver) pinImageParts(match string, parts []string) string {
 	if isProxy {
 		outputImage = proxyVar + strippedImage
 	}
-	return fmt.Sprintf("%s%s@%s%s # %s", prefix, outputImage, digest, suffix, tag)
+	return fmt.Sprintf("%s%s@%s%s # %s:%s", prefix, outputImage, digest, suffix, strippedImage, tag)
 }
 
 // fetchDigest fetches the docker content digest for image:tag.

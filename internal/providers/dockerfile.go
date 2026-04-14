@@ -68,7 +68,7 @@ func (r *dockerfileResolver) pinFrom(content string) string {
 		}
 		// trailing is either " " (before AS alias) or "\n" (end of line).
 		// Preserve it exactly so the remainder of the line (e.g. "AS builder") stays intact.
-		return fmt.Sprintf("%s%s@%s # %s%s", prefix, image, digest, tag, trailing)
+		return fmt.Sprintf("%s%s@%s # %s:%s%s", prefix, image, digest, image, tag, trailing)
 	})
 }
 

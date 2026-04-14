@@ -121,6 +121,72 @@ func TestIsGitLabCI(t *testing.T) {
 	}
 }
 
+// ── GitLab image:tag variable pinning (TAG keys) ─────────────────────────────
+
+func TestGitLabPinsImageTagVariable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, "sha256:trivy001")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := "variables:\n  TRIVY_TAG: aquasec/trivy:0.69.3\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:trivy001") {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# aquasec/trivy:0.69.3") {
+		t.Errorf("expected comment to include image name and tag, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageTagVariableLatest(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "variables:\n  SCANNER_TAG: aquasec/trivy:latest\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected 'latest' TAG variable to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabSkipsImageTagVariableAlreadyPinned(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	content := "variables:\n  SCANNER_TAG: aquasec/trivy@sha256:abc123\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected already-pinned TAG variable to be skipped, got:\n%s", got)
+	}
+}
+
+func TestGitLabDoesNotPinNonTagKey(t *testing.T) {
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	// Key does not contain TAG — must not be touched even if value looks like image:tag
+	content := "variables:\n  SCANNER_IMAGE: aquasec/trivy:0.69.3\n"
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "sha256:") {
+		t.Errorf("expected non-TAG key to be left untouched, got:\n%s", got)
+	}
+}
+
 // ── GitLab version input pinning ─────────────────────────────────────────────
 
 func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
@@ -148,7 +214,7 @@ func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
 	if !strings.Contains(got, "sha256:terraform01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.14.8") {
+	if !strings.Contains(got, "# hashicorp/terraform:1.14.8") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -213,7 +279,7 @@ func TestGitLabRepinsDigestKeyWithBareVersion(t *testing.T) {
 	if !strings.Contains(got, "sha256:") {
 		t.Errorf("expected TF_DIGEST bare version to be pinned, got:\n%s", got)
 	}
-	if !strings.Contains(got, "# 1.14.8") {
+	if !strings.Contains(got, "# hashicorp/terraform:1.14.8") {
 		t.Errorf("expected original version in comment, got:\n%s", got)
 	}
 	if !strings.Contains(got, "TF_DIGEST:") {
@@ -270,7 +336,7 @@ func TestGitLabPinsVersionInputWithIntermediateSuffix(t *testing.T) {
 	if !strings.Contains(got, "sha256:node000001") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 24.14.1-alpine3.23") {
+	if !strings.Contains(got, "# node:24.14.1-alpine3.23") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -309,7 +375,7 @@ func TestGitLabMixedPinnedAndUnpinnedInputs(t *testing.T) {
 	if !strings.Contains(got, "sha256:node000002") {
 		t.Errorf("expected NODE_IMAGE_DIGEST to be pinned, got:\n%s", got)
 	}
-	if !strings.Contains(got, "# 24.14.1-alpine3.23") {
+	if !strings.Contains(got, "# node:24.14.1-alpine3.23") {
 		t.Errorf(wantTagAsComment, got)
 	}
 	// Already-pinned inputs must be left untouched
@@ -426,18 +492,18 @@ include:
 	}
 
 	// Version inputs must be renamed to DIGEST and pinned.
-	pinned := []struct{ digestKey, version string }{
-		{"TF_DIGEST", "1.13.5"},
-		{"TRIVY_DIGEST", "0.69.1"},
-		{"NODE_DIGEST", "24.13.0"},
-		{"ALPINE_DIGEST", "3.23"},
+	pinned := []struct{ digestKey, comment string }{
+		{"TF_DIGEST", "# hashicorp/terraform:1.13.5"},
+		{"TRIVY_DIGEST", "# aquasec/trivy:0.69.1"},
+		{"NODE_DIGEST", "# node:24.13.0"},
+		{"ALPINE_DIGEST", "# alpine:3.23"},
 	}
 	for _, c := range pinned {
 		if !strings.Contains(got, c.digestKey+":") {
 			t.Errorf("expected key %s in output, got:\n%s", c.digestKey, got)
 		}
-		if !strings.Contains(got, "# "+c.version) {
-			t.Errorf("expected version comment # %s in output, got:\n%s", c.version, got)
+		if !strings.Contains(got, c.comment) {
+			t.Errorf("expected comment %s in output, got:\n%s", c.comment, got)
 		}
 	}
 	// Original _VERSION keys must be gone.
@@ -507,7 +573,7 @@ func TestCircleCIPinsImages(t *testing.T) {
 	if !strings.Contains(got, "sha256:circleci01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.0.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.0.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -654,7 +720,7 @@ func TestBitbucketPipelinesPinsImages(t *testing.T) {
 	if !strings.Contains(got, "sha256:bitbucket01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 3.0.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:3.0.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -793,7 +859,7 @@ func TestGitHubResolverPinImages(t *testing.T) {
 	if !strings.Contains(got, "sha256:deadbeef") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.2.3") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.2.3") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -840,7 +906,7 @@ func TestGitLabPinsImageWithDependencyProxyPrefix(t *testing.T) {
 			if !strings.Contains(got, c.want) {
 				t.Errorf("expected proxy prefix preserved in output, want substring %q, got:\n%s", c.want, got)
 			}
-			if !strings.Contains(got, "# 3.20") {
+			if !strings.Contains(got, "# alpine:3.20") {
 				t.Errorf(wantTagAsComment, got)
 			}
 		})
@@ -871,7 +937,7 @@ func TestGitLabPinsImageNameSubkey(t *testing.T) {
 	if !strings.Contains(got, "sha256:namekey01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.0.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.0.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -899,7 +965,7 @@ func TestGitLabPinsImageNameSubkeyWithEntrypoint(t *testing.T) {
 	if !strings.Contains(got, "sha256:namekey02") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 2.3.4") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:2.3.4") {
 		t.Errorf(wantTagAsComment, got)
 	}
 	if !strings.Contains(got, "entrypoint: [\"/bin/sh\", \"-c\"]") {
@@ -955,7 +1021,7 @@ func TestGitLabPinsServiceBareItem(t *testing.T) {
 	if !strings.Contains(got, "sha256:svc00001") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 15") {
+	if !strings.Contains(got, "# postgres:15") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -982,7 +1048,7 @@ func TestGitLabPinsServiceNameSubkey(t *testing.T) {
 	if !strings.Contains(got, "sha256:svc00002") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 7") {
+	if !strings.Contains(got, "# redis:7") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -1057,7 +1123,7 @@ func TestGitLabPinsServiceInJob(t *testing.T) {
 	if !strings.Contains(got, "sha256:svc00004") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 15") {
+	if !strings.Contains(got, "# postgres:15") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -1237,7 +1303,7 @@ func TestWoodpeckerPinsImages(t *testing.T) {
 	if !strings.Contains(got, "sha256:woodpecker01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.5.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.5.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }
@@ -1301,7 +1367,7 @@ func TestDockerfilePinsFrom(t *testing.T) {
 	if !strings.Contains(got, "sha256:dockerfile01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 1.0.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.0.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 	// AS alias must be preserved
@@ -1383,7 +1449,7 @@ func TestComposePinsImages(t *testing.T) {
 	if !strings.Contains(got, "sha256:compose01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# 2.0.0") {
+	if !strings.Contains(got, "# myregistry.example.com/myimage:2.0.0") {
 		t.Errorf(wantTagAsComment, got)
 	}
 }

@@ -178,7 +178,7 @@ func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool) func(string) 
 		}
 
 		indent := prefix[:len(prefix)-len(strings.TrimLeft(prefix, " \t"))]
-		return fmt.Sprintf("%s%s: %s@%s # %s", indent, key, image, digest, tag)
+		return fmt.Sprintf("%s%s: %s@%s # %s:%s", indent, key, image, digest, image, tag)
 	}
 }
 
@@ -282,7 +282,7 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 			return match
 		}
 		digestKey := toDigestKey(key)
-		return fmt.Sprintf("%s%s: %s%s%s # %s", indent, digestKey, quoteOpen, digest, quoteClose, version)
+		return fmt.Sprintf("%s%s: %s%s%s # %s:%s", indent, digestKey, quoteOpen, digest, quoteClose, image, version)
 	})
 }
 
