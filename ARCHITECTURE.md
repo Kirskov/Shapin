@@ -30,7 +30,7 @@ User
 | **Provider** (`internal/providers`) | Implements file matching and content rewriting for a specific CI/CD system |
 | **Docker Resolver** | Shared component used by all providers to resolve `image:tag` → `image@sha256:digest` via the Docker Registry HTTP API v2 |
 | **GitHub API** | External: resolves `owner/repo@tag` → commit SHA for GitHub Actions `uses:` refs |
-| **GitLab API** | External: resolves GitLab CI component refs and bare version variables |
+| **GitLab API** | External: resolves GitLab CI component refs and bare version variables; handles multi-document files (spec: preamble + pipeline body) |
 | **Forgejo API** | External: resolves Forgejo Actions `uses:` refs |
 | **Docker Registry** | External: resolves image tags to content-addressable digests (Docker Hub, GHCR, Quay.io, etc.) |
 
@@ -44,8 +44,10 @@ User
 6. The **Provider** applies regex-based rewriting:
    - Action refs (`uses: owner/repo@tag`) → resolved via the upstream VCS API to a commit SHA.
    - Image refs (`image: name:tag`, `FROM name:tag`) → resolved via the Docker Registry API to a content digest.
+   - GitLab `spec: inputs:` defaults → the nested `default:` version is pinned and the `description:` field updated.
    - Already-pinned refs are checked for drift and a warning is emitted if the tag has moved.
-7. If content changed, the Scanner writes the updated file (or prints a diff in dry-run mode).
+   - Some providers insert lines (e.g. the Dockerfile provider inserts a `# image:tag` comment above `FROM`).
+7. If content changed, the Scanner computes an LCS-based diff and writes the updated file (or prints the diff in dry-run mode).
 8. Results are reported in text, JSON, or SARIF format.
 
 ## Provider interface
