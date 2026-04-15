@@ -512,6 +512,132 @@ func TestGitLabPinsTriggerInputs(t *testing.T) {
 	}
 }
 
+func TestGitLabPinsMultiDocumentFile(t *testing.T) {
+	// Files with a --- separator (spec: preamble + pipeline body) must have
+	// inputs in the second document pinned, not just the first.
+	digests := map[string]string{
+		"amazon/aws-cli":      "sha256:awscli001",
+		"hashicorp/terraform": "sha256:tf000099",
+		"aquasec/trivy":       "sha256:trivy099",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, digestForPath(r.URL.Path, digests))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := `spec:
+  inputs:
+    AWS_CLI_IMAGE_DIGEST:
+      default: 2.34.28
+      description: "SHA256 digest of amazon/aws-cli"
+    TF_IMAGE_DIGEST:
+      default: "1.14.8"
+      description: "SHA256 digest of hashicorp/terraform"
+---
+include:
+  - component: $ROOT/trivy-catalogue/trivy-complete-workflow@2.3.0
+    inputs:
+      TRIVY_IMAGE_DIGEST: '0.69.3'
+  - component: $ROOT/aws-catalogue/aws-authentication@2.1.1
+    inputs:
+      AWS_CLI_IMAGE_DIGEST: $[[ inputs.AWS_CLI_IMAGE_DIGEST ]]
+`
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// spec: inputs: defaults in doc 1 must be pinned with updated descriptions
+	if !strings.Contains(got, "sha256:awscli001") {
+		t.Errorf("expected AWS_CLI_IMAGE_DIGEST default to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"SHA256 digest of amazon/aws-cli:2.34.28"`) {
+		t.Errorf("expected aws-cli description to be updated, got:\n%s", got)
+	}
+	if !strings.Contains(got, "sha256:tf000099") {
+		t.Errorf("expected TF_IMAGE_DIGEST default to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"SHA256 digest of hashicorp/terraform:1.14.8"`) {
+		t.Errorf("expected terraform description to be updated, got:\n%s", got)
+	}
+	// inputs: in doc 2 must also be pinned (uses inline comment, not description:)
+	if !strings.Contains(got, "sha256:trivy099") {
+		t.Errorf("expected TRIVY_IMAGE_DIGEST in second document to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# aquasec/trivy:0.69.3") {
+		t.Errorf("expected trivy version comment, got:\n%s", got)
+	}
+	// $[[ ]] reference must remain untouched
+	if !strings.Contains(got, "$[[ inputs.AWS_CLI_IMAGE_DIGEST ]]") {
+		t.Errorf("expected component input reference to remain unchanged, got:\n%s", got)
+	}
+}
+
+func TestGitLabPinsSpecInputsDefaultVersion(t *testing.T) {
+	// spec: inputs: with nested {default: version, description: ...} must be pinned.
+	digests := map[string]string{
+		"amazon/aws-cli":       "sha256:awscli001",
+		"hashicorp/terraform":  "sha256:tf000099",
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, digestForPath(r.URL.Path, digests))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+	defer srv.Close()
+
+	p := NewGitLabResolver(gitlabCom, "", nil)
+	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
+
+	content := `spec:
+  inputs:
+    AWS_CLI_IMAGE_DIGEST:
+      default: 2.34.28
+      description: "SHA256 digest of amazon/aws-cli"
+    TF_IMAGE_DIGEST:
+      default: "1.14.8"
+      description: "SHA256 digest of hashicorp/terraform"
+include:
+  - component: $ROOT/aws-catalogue/aws-authentication@2.1.1
+    inputs:
+      AWS_CLI_IMAGE_DIGEST: $[[ inputs.AWS_CLI_IMAGE_DIGEST ]]
+`
+	got, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "sha256:awscli001") {
+		t.Errorf("expected AWS_CLI_IMAGE_DIGEST default to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"SHA256 digest of amazon/aws-cli:2.34.28"`) {
+		t.Errorf("expected aws-cli description to be updated, got:\n%s", got)
+	}
+	if !strings.Contains(got, "sha256:tf000099") {
+		t.Errorf("expected TF_IMAGE_DIGEST default to be pinned, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"SHA256 digest of hashicorp/terraform:1.14.8"`) {
+		t.Errorf("expected terraform description to be updated, got:\n%s", got)
+	}
+	// No inline comment on the default: line.
+	if strings.Contains(got, "# amazon/aws-cli:2.34.28") {
+		t.Errorf("expected no inline comment on default: line, got:\n%s", got)
+	}
+	// The $[[ inputs.AWS_CLI_IMAGE_DIGEST ]] reference must not be modified.
+	if !strings.Contains(got, "$[[ inputs.AWS_CLI_IMAGE_DIGEST ]]") {
+		t.Errorf("expected component input reference to remain unchanged, got:\n%s", got)
+	}
+}
+
 func TestExtractStem(t *testing.T) {
 	cases := []struct {
 		key  string
@@ -1495,8 +1621,12 @@ func TestDockerfilePinsFrom(t *testing.T) {
 	if !strings.Contains(got, "sha256:dockerfile01") {
 		t.Errorf(wantDigestInOutput, got)
 	}
-	if !strings.Contains(got, "# myregistry.example.com/myimage:1.0.0") {
-		t.Errorf(wantTagAsComment, got)
+	// Comment must appear on the line above FROM, not inline.
+	if !strings.Contains(got, "# myregistry.example.com/myimage:1.0.0\n") {
+		t.Errorf("expected image:tag comment on line above FROM, got:\n%s", got)
+	}
+	if strings.Contains(got, "sha256:dockerfile01 #") {
+		t.Errorf("expected no inline comment after digest, got:\n%s", got)
 	}
 	// AS alias must be preserved
 	if !strings.Contains(got, "AS builder") {

@@ -20,26 +20,80 @@ type Hunk struct {
 	Line int    `json:"line"` // 1-based line number in the original file
 }
 
-// diffLines calls fn(lineNumber, old, new) for every line position that differs
-// between original and updated. lineNumber is 1-based.
-//
-// Note: shapin only replaces inline values (SHAs, digests) and never inserts or
-// deletes lines, so a positional line-by-line diff is accurate here.
+// diffLines calls fn(lineNumber, old, new) for every changed line position.
+// lineNumber is 1-based and refers to the original file.
+// Uses an LCS-based diff so insertions (e.g. comment lines added above FROM)
+// are reported correctly without shifting subsequent unchanged lines.
 func diffLines(original, updated string, fn func(line int, oldLine, newLine string)) {
-	originalLines := strings.Split(original, "\n")
-	updatedLines := strings.Split(updated, "\n")
-	lineCount := max(len(originalLines), len(updatedLines))
-	for i := range lineCount {
-		var oldLine, newLine string
-		if i < len(originalLines) {
-			oldLine = originalLines[i]
+	a := strings.Split(original, "\n")
+	b := strings.Split(updated, "\n")
+	lcs := buildLCS(a, b)
+	walkEdits(a, b, lcs, fn)
+}
+
+// buildLCS builds the longest-common-subsequence table for two string slices.
+func buildLCS(a, b []string) [][]int {
+	m, n := len(a), len(b)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+	for i := m - 1; i >= 0; i-- {
+		for j := n - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else if dp[i+1][j] >= dp[i][j+1] {
+				dp[i][j] = dp[i+1][j]
+			} else {
+				dp[i][j] = dp[i][j+1]
+			}
 		}
-		if i < len(updatedLines) {
-			newLine = updatedLines[i]
+	}
+	return dp
+}
+
+// walkEdits traverses the LCS edit script and calls fn for each changed position.
+// Deletions and insertions at the same position are paired as substitutions.
+func walkEdits(a, b []string, dp [][]int, fn func(line int, oldLine, newLine string)) {
+	i, j := 0, 0
+	m, n := len(a), len(b)
+	for i < m || j < n {
+		if i < m && j < n && a[i] == b[j] {
+			i++
+			j++
+			continue
 		}
-		if oldLine != newLine {
-			fn(i+1, oldLine, newLine)
-		}
+		dels, ins := collectChunk(a, b, dp, &i, &j, m, n)
+		emitChunk(dels, ins, i, fn)
+	}
+}
+
+// collectChunk advances i and j past one block of consecutive deletions then
+// insertions, returning the collected lines.
+func collectChunk(a, b []string, dp [][]int, i, j *int, m, n int) (dels, ins []string) {
+	for *i < m && (*j >= n || dp[*i+1][*j] >= dp[*i][*j+1]) {
+		dels = append(dels, a[*i])
+		*i++
+	}
+	for *j < n && (*i >= m || dp[*i][*j+1] > dp[*i+1][*j]) {
+		ins = append(ins, b[*j])
+		*j++
+	}
+	return dels, ins
+}
+
+// emitChunk pairs deletions with insertions as substitutions and emits leftovers.
+func emitChunk(dels, ins []string, iAfter int, fn func(int, string, string)) {
+	base := iAfter - len(dels)
+	k := 0
+	for ; k < len(dels) && k < len(ins); k++ {
+		fn(base+k+1, dels[k], ins[k])
+	}
+	for ; k < len(dels); k++ {
+		fn(base+k+1, dels[k], "")
+	}
+	for ; k < len(ins); k++ {
+		fn(iAfter+1, "", ins[k])
 	}
 }
 

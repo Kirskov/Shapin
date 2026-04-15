@@ -41,11 +41,18 @@ func (r *dockerfileResolver) Resolve(content string, _, pinImages bool) (string,
 }
 
 func (r *dockerfileResolver) warnIfDrifted(content string) {
-	(&driftChecker{
-		pinnedRegex: dockerfileFromPinned,
-		kind:        "image",
-		resolve:     r.docker.fetchDigest,
-	}).checkAll(content)
+	// patternFromPinned captures (image, tag, sha) — different order from the
+	// generic driftChecker convention — so we handle it inline.
+	for _, parts := range dockerfileFromPinned.FindAllStringSubmatch(content, -1) {
+		image, tag, pinnedSHA := parts[1], parts[2], parts[3]
+		currentSHA, err := r.docker.fetchDigest(image, tag)
+		if err != nil {
+			continue
+		}
+		if currentSHA != pinnedSHA {
+			warnDrift("image", image, tag, pinnedSHA, currentSHA)
+		}
+	}
 }
 
 func (r *dockerfileResolver) pinFrom(content string) string {
@@ -68,7 +75,8 @@ func (r *dockerfileResolver) pinFrom(content string) string {
 		}
 		// trailing is either " " (before AS alias) or "\n" (end of line).
 		// Preserve it exactly so the remainder of the line (e.g. "AS builder") stays intact.
-		return fmt.Sprintf("%s%s@%s # %s:%s%s", prefix, image, digest, image, tag, trailing)
+		// The image:tag comment goes on the line above to keep the FROM line valid.
+		return fmt.Sprintf("# %s:%s\n%s%s@%s%s", image, tag, prefix, image, digest, trailing)
 	})
 }
 
