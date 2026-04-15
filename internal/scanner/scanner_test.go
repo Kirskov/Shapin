@@ -72,6 +72,69 @@ func newFakeGitHubServer(tagSHAs map[string]string) *httptest.Server {
 	}))
 }
 
+// ── diffLines ─────────────────────────────────────────────────────────────────
+
+func TestDiffLinesSubstitution(t *testing.T) {
+	// Normal case: same line count, values replaced inline.
+	original := "FROM golang:1.24\nRUN echo hi\n"
+	updated := "FROM golang@sha256:abc\nRUN echo hi\n"
+	var hunks []Hunk
+	diffLines(original, updated, func(line int, o, u string) {
+		hunks = append(hunks, Hunk{Line: line, Old: o, New: u})
+	})
+	if len(hunks) != 1 {
+		t.Fatalf("expected 1 hunk, got %d: %v", len(hunks), hunks)
+	}
+	if hunks[0].Line != 1 {
+		t.Errorf("expected change on line 1, got line %d", hunks[0].Line)
+	}
+	if hunks[0].Old != "FROM golang:1.24" {
+		t.Errorf("unexpected old: %q", hunks[0].Old)
+	}
+	if hunks[0].New != "FROM golang@sha256:abc" {
+		t.Errorf("unexpected new: %q", hunks[0].New)
+	}
+}
+
+func TestDiffLinesInsertion(t *testing.T) {
+	// Dockerfile FROM pinning inserts a comment line above FROM.
+	// Subsequent lines (COPY, RUN) must NOT appear as changed.
+	original := "FROM alpine:3.23\nCOPY foo /foo\nRUN echo done\n"
+	updated := "# alpine:3.23\nFROM alpine@sha256:abc\nCOPY foo /foo\nRUN echo done\n"
+	type change struct{ old, new string }
+	var changes []change
+	diffLines(original, updated, func(_ int, o, u string) {
+		changes = append(changes, change{o, u})
+	})
+	// Must be exactly 2 hunks — the two changed lines — with COPY and RUN untouched.
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 hunks, got %d: %v", len(changes), changes)
+	}
+	// Together the two hunks must account for the comment insertion and FROM replacement.
+	allOld := changes[0].old + changes[1].old
+	allNew := changes[0].new + changes[1].new
+	if !strings.Contains(allOld+allNew, "FROM alpine:3.23") {
+		t.Errorf("expected FROM alpine:3.23 in hunks, got: %v", changes)
+	}
+	if !strings.Contains(allOld+allNew, "# alpine:3.23") {
+		t.Errorf("expected # alpine:3.23 in hunks, got: %v", changes)
+	}
+	if !strings.Contains(allOld+allNew, "FROM alpine@sha256:abc") {
+		t.Errorf("expected FROM alpine@sha256:abc in hunks, got: %v", changes)
+	}
+}
+
+func TestDiffLinesUnchanged(t *testing.T) {
+	content := "line1\nline2\nline3\n"
+	var hunks []Hunk
+	diffLines(content, content, func(line int, o, u string) {
+		hunks = append(hunks, Hunk{Line: line, Old: o, New: u})
+	})
+	if len(hunks) != 0 {
+		t.Errorf("expected no hunks for identical content, got %d", len(hunks))
+	}
+}
+
 // ── findWorkflowFiles ─────────────────────────────────────────────────────────
 
 func TestFindWorkflowFiles(t *testing.T) {

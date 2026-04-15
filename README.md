@@ -45,7 +45,7 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 | Forgejo Action | `uses: actions/checkout@v1` | `uses: actions/checkout@abc1234... # v1` |
 | Docker image (`image:`) | `image: maildev/maildev:2.2.1` | `image: maildev/maildev@sha256:180ef5... # maildev/maildev:2.2.1` |
 | Docker image (`image: name:`) | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev:2.2.1` | `image:`<br>&nbsp;&nbsp;`name: maildev/maildev@sha256:180ef5... # maildev/maildev:2.2.1` |
-| Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `FROM golang@sha256:8bee19... # golang:1.24-alpine AS builder` |
+| Dockerfile `FROM` | `FROM golang:1.24-alpine AS builder` | `# golang:1.24-alpine`<br>`FROM golang@sha256:8bee19... AS builder` |
 | GitLab component ref | `component: gitlab.com/group/proj/name@v1.0.0` | `component: gitlab.com/group/proj/name@abc1234... # v1.0.0` |
 | GitLab `image:tag` variable | `TRIVY_TAG: aquasec/trivy:0.69.3` | `TRIVY_TAG: aquasec/trivy@sha256:eafae... # aquasec/trivy:0.69.3` |
 | GitLab bare version variable | `TF_VERSION: "1.14.8"` | `TF_DIGEST: "sha256:6bbb82... # hashicorp/terraform:1.14.8"` |
@@ -542,14 +542,38 @@ Pins Docker `image:` tags inside `.woodpecker.yml`, `.woodpecker.yaml`, and any 
 
 ### Dockerfile
 
-Pins `FROM image:tag` lines to digests at any depth. The `AS alias` is preserved.
+Pins `FROM image:tag` lines to digests at any depth. The `AS alias` is preserved. The original tag is recorded on the line above as a comment — Docker does not allow inline comments on `FROM` lines.
 
 ```dockerfile
 FROM golang:1.24-alpine AS builder
-# → FROM golang@sha256:... # golang:1.24-alpine AS builder
+# →
+# golang:1.24-alpine
+FROM golang@sha256:... AS builder
 ```
 
 `FROM scratch` is left untouched.
+
+#### GitLab CI `spec: inputs:` defaults
+
+When a GitLab CI file declares its inputs using the `spec: inputs:` preamble with a nested `default:` version, Shapin pins the default value and updates the `description:` field:
+
+```yaml
+# before
+spec:
+  inputs:
+    TF_IMAGE_DIGEST:
+      default: "1.14.8"
+      description: "SHA256 digest of hashicorp/terraform"
+
+# after
+spec:
+  inputs:
+    TF_IMAGE_DIGEST:
+      default: "sha256:42ecfb..."
+      description: "SHA256 digest of hashicorp/terraform:1.14.8"
+```
+
+The `$[[ inputs.TF_IMAGE_DIGEST ]]` forwarding references in `include:` component inputs are left untouched.
 
 ---
 

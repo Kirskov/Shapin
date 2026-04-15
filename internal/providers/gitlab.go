@@ -1,9 +1,11 @@
 package providers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 	"gopkg.in/yaml.v3"
 	"net/http"
 	"os"
@@ -97,17 +99,35 @@ func (r *gitlabResolver) resolveComponentInputs(content string) string {
 	return gitlabInputTagRegex.ReplaceAllStringFunc(content, r.pinInputTagMatch(tagKeys))
 }
 
+// parseAllDocs decodes all YAML documents in content and returns their root nodes.
+// GitLab CI files may use a --- separator to split a spec: preamble from the
+// pipeline body; yaml.Unmarshal only returns the first document, so we use a
+// Decoder to iterate over all of them.
+func parseAllDocs(content string) []*yaml.Node {
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(content)))
+	var roots []*yaml.Node
+	for {
+		var node yaml.Node
+		if err := dec.Decode(&node); err != nil {
+			break
+		}
+		roots = append(roots, &node)
+	}
+	return roots
+}
+
 // collectTagInputKeys parses the YAML and returns the set of input key names
 // that contain "TAG" and hold an unpinned image:tag value.
 // It walks the entire document recursively so it catches variables: and inputs:
 // at any nesting level (top-level, inside jobs, inside include blocks, etc.).
 func collectTagInputKeys(content string) map[string]bool {
-	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(content), &root); err != nil || root.Kind == 0 {
+	keys := make(map[string]bool)
+	for _, root := range parseAllDocs(content) {
+		walkTagMaps(root, keys)
+	}
+	if len(keys) == 0 {
 		return nil
 	}
-	keys := make(map[string]bool)
-	walkTagMaps(&root, keys)
 	return keys
 }
 
@@ -185,12 +205,10 @@ func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool) func(string) 
 // collectMappedVersionKeys parses the YAML and returns keys from variables:/inputs:
 // blocks that have a stem in tagMappings and a bare, unpinned version value.
 func (r *gitlabResolver) collectMappedVersionKeys(content string) map[string]bool {
-	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(content), &root); err != nil || root.Kind == 0 {
-		return nil
-	}
 	keys := make(map[string]bool)
-	r.walkMappedVersionMaps(&root, keys)
+	for _, root := range parseAllDocs(content) {
+		r.walkMappedVersionMaps(root, keys)
+	}
 	return keys
 }
 
@@ -284,6 +302,134 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 		digestKey := toDigestKey(key)
 		return fmt.Sprintf("%s%s: %s%s%s # %s:%s", indent, digestKey, quoteOpen, digest, quoteClose, image, version)
 	})
+}
+
+// specInputEntry holds the image, version, and whether a description: field is
+// present, extracted from a spec: inputs: nested mapping.
+type specInputEntry struct {
+	image          string
+	version        string
+	hasDescription bool
+}
+
+// collectSpecInputEntries parses the YAML and returns entries for spec.inputs keys
+// whose value is a mapping containing a bare, pinnable default: version string.
+// e.g. AWS_CLI_IMAGE_DIGEST: {default: "2.34.28"} → {image: "amazon/aws-cli", version: "2.34.28"}
+func (r *gitlabResolver) collectSpecInputEntries(content string) map[string]specInputEntry {
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil || root.Kind == 0 {
+		return nil
+	}
+	// Find the spec.inputs mapping node.
+	doc := &root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	var inputsNode *yaml.Node
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == "spec" {
+			specVal := doc.Content[i+1]
+			if specVal.Kind != yaml.MappingNode {
+				break
+			}
+			for j := 0; j+1 < len(specVal.Content); j += 2 {
+				if specVal.Content[j].Value == "inputs" {
+					inputsNode = specVal.Content[j+1]
+					break
+				}
+			}
+			break
+		}
+	}
+	if inputsNode == nil || inputsNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	entries := make(map[string]specInputEntry)
+	for i := 0; i+1 < len(inputsNode.Content); i += 2 {
+		k := inputsNode.Content[i].Value
+		valNode := inputsNode.Content[i+1]
+		if valNode.Kind != yaml.MappingNode {
+			continue
+		}
+		stem := extractStem(k)
+		if stem == "" {
+			continue
+		}
+		image := r.lookupStem(stem)
+		if image == "" {
+			continue
+		}
+		// Find the default: key inside the nested mapping.
+		var version string
+		var hasDescription bool
+		for j := 0; j+1 < len(valNode.Content); j += 2 {
+			switch valNode.Content[j].Value {
+			case "default":
+				v := valNode.Content[j+1].Value
+				if v == "" || strings.HasPrefix(v, "$") || isSHA(v) || strings.Contains(v, ":") {
+					version = "" // not pinnable
+				} else {
+					version = v
+				}
+			case "description":
+				hasDescription = true
+			}
+		}
+		if version != "" {
+			entries[k] = specInputEntry{image: image, version: version, hasDescription: hasDescription}
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	return entries
+}
+
+// resolveSpecInputs pins bare version values inside spec: inputs: default: fields
+// and updates (or adds) the description: field with the image:tag reference.
+// e.g. AWS_CLI_IMAGE_DIGEST: {default: "2.34.28"} →
+//
+//	default: sha256:xxx
+//	description: "SHA256 digest of amazon/aws-cli:2.34.28"
+func (r *gitlabResolver) resolveSpecInputs(content string) string {
+	entries := r.collectSpecInputEntries(content)
+	if len(entries) == 0 {
+		return content
+	}
+	for key, entry := range entries {
+		digest, err := r.docker.fetchDigest(entry.image, entry.version)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warn: GitLab spec input %s (%s:%s): %v\n", key, entry.image, entry.version, err)
+			continue
+		}
+		imageTag := entry.image + ":" + entry.version
+		description := `"SHA256 digest of ` + imageTag + `"`
+
+		// Pin the default: value (no trailing comment).
+		reDefault := regexp.MustCompile(`(?m)^(\s+` + regexp.QuoteMeta(key) + `:\s*\n\s+default:\s+['"]?)` + regexp.QuoteMeta(entry.version) + `(['"]?[^\S\n]*)$`)
+		content = reDefault.ReplaceAllString(content, "${1}"+digest+"${2}")
+
+		// Update an existing description: line under this key.
+		if entry.hasDescription {
+			reDesc := regexp.MustCompile(`(?m)^(\s+` + regexp.QuoteMeta(key) + `:[^\n]*\n(?:\s+[^\n]+\n)*?\s+description:\s+)(['"]?)[^\n]*(['"]?)[^\S\n]*$`)
+			content = reDesc.ReplaceAllString(content, "${1}"+description)
+		} else {
+			// No description field: insert one after the default: line.
+			reInsert := regexp.MustCompile(`(?m)^(\s+)(` + regexp.QuoteMeta(key) + `:[^\n]*\n\s+default:[^\n]*)$`)
+			content = reInsert.ReplaceAllStringFunc(content, func(match string) string {
+				parts := reInsert.FindStringSubmatch(match)
+				if len(parts) < 3 {
+					return match
+				}
+				indent := parts[1] + "  " // one extra level
+				return parts[0] + "\n" + indent + "description: " + description
+			})
+		}
+	}
+	return content
 }
 
 // gitlabHostVars are predefined GitLab CI variables that expand to the instance hostname.
@@ -441,6 +587,7 @@ func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (st
 		result = r.docker.resolveServices(result)
 		result = r.resolveComponentInputs(result)
 		result = r.resolveMappedVersionInputs(result)
+		result = r.resolveSpecInputs(result)
 	}
 	if pinActions {
 		r.warnIfDrifted(result)

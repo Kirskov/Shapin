@@ -70,8 +70,8 @@ const (
 	patternDockerName    = `(?m)^([^#\n]*name:\s+['"]?)(\$\{[A-Z0-9_]+\}/|\$[A-Z0-9_]+/)?([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?)`
 	patternGLService     = `(?m)^([\t ]*-[\t ]+['"]?)()([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?[\t ]*)$`
 	patternDockerPinned = `image:\s+['"]?([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)['"]?\s+#\s+(\S+)`
-	patternFromLine     = `(?m)^(FROM\s+)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(\s|$)`
-	patternFromPinned   = `(?m)^FROM\s+([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s+#\s+(\S+)`
+	patternFromLine     = `(?m)^(FROM\s+)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)([ \t][^\n]*\n|\n)`
+	patternFromPinned   = `(?m)^#\s+([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)\nFROM\s+[a-zA-Z0-9_.\-/]+@(sha256:[0-9a-f]+)`
 	patternGHAction     = `(uses:\s+)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([^\s#]+)`
 	patternGHPinned     = `uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_./%-]+)@([0-9a-f]{40})\s+#\s+(\S+)`
 	patternGLComponent  = `(component:\s+)(\$?[a-zA-Z0-9_.\-/]+)@([^\s#]+)`
