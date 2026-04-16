@@ -91,12 +91,12 @@ func (r *gitlabResolver) IsMatch(relPath string) bool {
 // resolveComponentInputs pins image:tag values in inputs: blocks whose key
 // contains "TAG" (e.g. TRIVY_TAG, IMAGE_TAG). Uses yaml.v3 to identify which
 // keys are TAG inputs, then regex-replaces to preserve file formatting.
-func (r *gitlabResolver) resolveComponentInputs(content string) string {
+func (r *gitlabResolver) resolveComponentInputs(content string, warns *[]string) string {
 	tagKeys := collectTagInputKeys(content)
 	if len(tagKeys) == 0 {
 		return content
 	}
-	return gitlabInputTagRegex.ReplaceAllStringFunc(content, r.pinInputTagMatch(tagKeys))
+	return gitlabInputTagRegex.ReplaceAllStringFunc(content, r.pinInputTagMatch(tagKeys, warns))
 }
 
 // parseAllDocs decodes all YAML documents in content and returns their root nodes.
@@ -178,7 +178,7 @@ func collectTagKeysFromMap(node *yaml.Node, keys map[string]bool) {
 
 // pinInputTagMatch returns a replacement function for gitlabInputTagRegex that
 // pins values whose key is in tagKeys.
-func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool) func(string) string {
+func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool, warns *[]string) func(string) string {
 	return func(match string) string {
 		parts := gitlabInputTagRegex.FindStringSubmatch(match)
 		if len(parts) < 5 {
@@ -193,7 +193,7 @@ func (r *gitlabResolver) pinInputTagMatch(tagKeys map[string]bool) func(string) 
 
 		digest, err := r.docker.fetchDigest(image, tag)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warn: GitLab input %s (%s:%s): %v\n", key, image, tag, err)
+			*warns = append(*warns, fmt.Sprintf("GitLab input %s (%s:%s): %v", key, image, tag, err))
 			return match
 		}
 
@@ -278,7 +278,7 @@ func (r *gitlabResolver) lookupStem(stem string) string {
 // by looking up the key's stem in tagMappings to find the image, then fetching
 // the digest for that version. Uses YAML parsing to identify eligible keys, then
 // regex replacement to preserve file formatting.
-func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
+func (r *gitlabResolver) resolveMappedVersionInputs(content string, warns *[]string) string {
 	mappedKeys := r.collectMappedVersionKeys(content)
 	if len(mappedKeys) == 0 {
 		return content
@@ -296,7 +296,7 @@ func (r *gitlabResolver) resolveMappedVersionInputs(content string) string {
 		image := r.lookupStem(stem)
 		digest, err := r.docker.fetchDigest(image, version)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warn: GitLab input %s (%s:%s): %v\n", key, image, version, err)
+			*warns = append(*warns, fmt.Sprintf("GitLab input %s (%s:%s): %v", key, image, version, err))
 			return match
 		}
 		digestKey := toDigestKey(key)
@@ -394,7 +394,7 @@ func (r *gitlabResolver) collectSpecInputEntries(content string) map[string]spec
 //
 //	default: sha256:xxx
 //	description: "SHA256 digest of amazon/aws-cli:2.34.28"
-func (r *gitlabResolver) resolveSpecInputs(content string) string {
+func (r *gitlabResolver) resolveSpecInputs(content string, warns *[]string) string {
 	entries := r.collectSpecInputEntries(content)
 	if len(entries) == 0 {
 		return content
@@ -402,7 +402,7 @@ func (r *gitlabResolver) resolveSpecInputs(content string) string {
 	for key, entry := range entries {
 		digest, err := r.docker.fetchDigest(entry.image, entry.version)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warn: GitLab spec input %s (%s:%s): %v\n", key, entry.image, entry.version, err)
+			*warns = append(*warns, fmt.Sprintf("GitLab spec input %s (%s:%s): %v", key, entry.image, entry.version, err))
 			continue
 		}
 		imageTag := entry.image + ":" + entry.version
@@ -579,23 +579,24 @@ func extractProjectPath(component string) (string, error) {
 }
 
 // Resolve replaces image tags, bare version inputs, and component refs to digests/SHAs.
-func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
+func (r *gitlabResolver) Resolve(content string, pinActions, pinImages bool) (string, []string, error) {
+	var warns []string
 	result := content
 	if pinImages {
-		result = r.docker.resolveImages(result)
-		result = r.docker.resolveImageNames(result)
-		result = r.docker.resolveServices(result)
-		result = r.resolveComponentInputs(result)
-		result = r.resolveMappedVersionInputs(result)
-		result = r.resolveSpecInputs(result)
+		result = r.docker.resolveImages(result, &warns)
+		result = r.docker.resolveImageNames(result, &warns)
+		result = r.docker.resolveServices(result, &warns)
+		result = r.resolveComponentInputs(result, &warns)
+		result = r.resolveMappedVersionInputs(result, &warns)
+		result = r.resolveSpecInputs(result, &warns)
 	}
 	if pinActions {
 		r.warnIfDrifted(result)
 		var err error
 		result, err = r.pinComponents(result)
 		if err != nil {
-			return result, err
+			return result, warns, err
 		}
 	}
-	return result, nil
+	return result, warns, nil
 }

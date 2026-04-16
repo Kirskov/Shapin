@@ -66,6 +66,7 @@ func Run(cfg Config) error {
 		sem        = make(chan struct{}, workers)
 		mu         sync.Mutex
 		changes    []FileChange
+		allWarnings []fileWarning
 	)
 
 	for _, file := range files {
@@ -74,7 +75,7 @@ func Run(cfg Config) error {
 		go func(filePath string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fileChange, err := processFile(filePath, cfg.Path, providerList, processOpts{
+			fileChange, warns, err := processFile(filePath, cfg.Path, providerList, processOpts{
 				dryRun:     cfg.DryRun,
 				pinActions: cfg.PinActions,
 				pinImages:  cfg.PinImages,
@@ -85,12 +86,15 @@ func Run(cfg Config) error {
 				fmt.Fprintf(os.Stderr, "warn: %s: %v\n", filePath, err)
 				return
 			}
+			mu.Lock()
 			if fileChange != nil {
 				anyChanged.Store(true)
-				mu.Lock()
 				changes = append(changes, *fileChange)
-				mu.Unlock()
 			}
+			for _, w := range warns {
+				allWarnings = append(allWarnings, fileWarning{file: filePath, msg: w})
+			}
+			mu.Unlock()
 		}(file)
 	}
 	wg.Wait()
@@ -108,7 +112,19 @@ func Run(cfg Config) error {
 		fmt.Fprintln(out, nothingToDoMessage(cfg.PinActions, cfg.PinImages))
 	}
 
+	if len(allWarnings) > 0 {
+		fmt.Fprintln(os.Stderr, "\nWarnings:")
+		for _, w := range allWarnings {
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", w.file, w.msg)
+		}
+	}
+
 	return nil
+}
+
+type fileWarning struct {
+	file string
+	msg  string
 }
 
 func nothingToDoMessage(pinActions, pinImages bool) string {
@@ -222,30 +238,31 @@ type processOpts struct {
 }
 
 // processFile resolves refs in a single file and writes it (or prints a diff in dry-run mode).
-// Returns a non-nil *FileChange if anything changed, nil if content was already pinned.
-func processFile(path, root string, providers []contract.Provider, opts processOpts) (*FileChange, error) {
+// Returns a non-nil *FileChange if anything changed, nil if content was already pinned,
+// and any non-fatal warnings emitted during resolution.
+func processFile(path, root string, providers []contract.Provider, opts processOpts) (*FileChange, []string, error) {
 	if err := assertWithinRoot(path, root); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	matched, err := matchProvider(path, root, providers)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	raw, err := os.ReadFile(path) // #nosec G304 — path validated by assertWithinRoot
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	original := string(raw)
 
-	updated, err := matched.Resolve(original, opts.pinActions, opts.pinImages)
+	updated, warns, err := matched.Resolve(original, opts.pinActions, opts.pinImages)
 	if err != nil {
-		return nil, err
+		return nil, warns, err
 	}
 
 	if updated == original {
-		return nil, nil
+		return nil, warns, nil
 	}
 
 	fc := collectChanges(path, original, updated)
@@ -256,14 +273,14 @@ func processFile(path, root string, providers []contract.Provider, opts processO
 
 	if !opts.dryRun {
 		if err := os.WriteFile(path, []byte(updated), filePerms); err != nil { // #nosec G703,G306 — path validated by assertWithinRoot; filePerms is 0644
-			return nil, err
+			return nil, warns, err
 		}
 		if opts.format == FormatText {
 			fmt.Fprintf(opts.out, "  updated %s\n", path)
 		}
 	}
 
-	return &fc, nil
+	return &fc, warns, nil
 }
 
 // printDiff prints a colored unified-style diff of the changes.

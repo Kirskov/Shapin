@@ -49,15 +49,17 @@ func (r *githubResolver) IsMatch(relPath string) bool {
 }
 
 // Resolve replaces `uses: action@tag` and/or `image: name:tag` with pinned SHAs.
-func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (string, error) {
+func (r *githubResolver) Resolve(content string, pinActions, pinImages bool) (string, []string, error) {
+	var warns []string
 	if pinImages {
-		content = r.docker.resolveImages(content)
+		content = r.docker.resolveImages(content, &warns)
 	}
 	if !pinActions {
-		return content, nil
+		return content, warns, nil
 	}
 	r.warnIfDrifted(content)
-	return r.pinActions(content)
+	result, err := r.pinActions(content)
+	return result, warns, err
 }
 
 // warnIfDrifted scans for already-pinned refs and warns if the SHA no longer

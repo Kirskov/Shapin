@@ -241,7 +241,7 @@ func TestRunnerDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range files {
-		if _, err := processFile(f, dir, pl, processOpts{dryRun: true, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout}); err != nil {
+		if _, _, err := processFile(f, dir, pl, processOpts{dryRun: true, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout}); err != nil {
 			t.Fatalf("processFile: %v", err)
 		}
 	}
@@ -269,7 +269,7 @@ func TestRunnerAppliesChanges(t *testing.T) {
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 		providers.NewGitLabResolver(gitlabCom, "", nil),
 	}
-	fc, err := processFile(ghDir+ciYML, dir, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
+	fc, _, err := processFile(ghDir+ciYML, dir, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 	if err != nil {
 		t.Fatalf("processFile: %v", err)
 	}
@@ -341,7 +341,7 @@ func processFilesConcurrently(t *testing.T, files []string, root string, pl []co
 		go func(path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fc, err := processFile(path, root, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
+			fc, _, err := processFile(path, root, pl, processOpts{dryRun: false, pinActions: true, pinImages: false, format: FormatText, out: os.Stdout})
 			if err != nil {
 				t.Errorf("processFile(%s): %v", path, err)
 				return

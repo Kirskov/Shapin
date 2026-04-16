@@ -131,7 +131,6 @@ var builtinStemMappings = map[string]string{
 	"GRYPE":         "anchore/grype",
 	"SEMGREP":       "semgrep/semgrep",
 	"COSIGN":        "cgr.dev/chainguard/cosign",
-	"ANSIBLE":       "cytopia/ansible",
 	"PACKER":        "hashicorp/packer",
 	"VAULT":         "hashicorp/vault",
 	"GOLANGCI":      "golangci/golangci-lint",

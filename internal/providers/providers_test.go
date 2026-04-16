@@ -138,7 +138,7 @@ func TestGitLabPinsImageTagVariable(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "variables:\n  TRIVY_TAG: aquasec/trivy:0.69.3\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestGitLabPinsImageTagVariable(t *testing.T) {
 func TestGitLabSkipsImageTagVariableLatest(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "variables:\n  SCANNER_TAG: aquasec/trivy:latest\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestGitLabSkipsImageTagVariableLatest(t *testing.T) {
 func TestGitLabSkipsImageTagVariableAlreadyPinned(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "variables:\n  SCANNER_TAG: aquasec/trivy@sha256:abc123\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestGitLabDoesNotPinNonTagKey(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	// Key does not contain TAG — must not be touched even if value looks like image:tag
 	content := "variables:\n  SCANNER_IMAGE: aquasec/trivy:0.69.3\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestGitLabPinsBuiltinVersionInput(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "      TF_VERSION: \"1.14.8\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestGitLabPinsUserMappingOverridesBuiltin(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "      TF_VERSION: \"1.14.8\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestGitLabPinsUserMappingOverridesBuiltin(t *testing.T) {
 func TestGitLabSkipsVersionInputWithDollarSign(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "      TF_VERSION: \"$SOME_VAR\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestGitLabSkipsVersionInputWithDollarSign(t *testing.T) {
 func TestGitLabSkipsVersionInputAlreadyDigest(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "      TF_VERSION: \"sha256:abc123\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestGitLabRepinsDigestKeyWithBareVersion(t *testing.T) {
 	// to TF_DIGEST: "sha256:... # 1.14.8" — this is the upgrade workflow.
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "  TF_DIGEST: \"1.14.8\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestGitLabPinsVersionInputWithIntermediateSuffix(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "      NODE_IMAGE_DIGEST: \"24.14.1-alpine3.23\"\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestGitLabMixedPinnedAndUnpinnedInputs(t *testing.T) {
       TRIVY_IMAGE_DIGEST: "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c" # 0.69.3
       NODE_IMAGE_DIGEST: 24.14.1-alpine3.23
 `
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestGitLabPinsGlobalImage(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "image: golang:1.24\n\njob:\n  script:\n    - go build\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestGitLabPinsDefaultBlockImage(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "default:\n  image: golang:1.24\n\njob:\n  script:\n    - go build\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestGitLabPinsDefaultBlockServices(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "default:\n  image: golang:1.24\n  services:\n    - postgres:15\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +494,7 @@ func TestGitLabPinsTriggerInputs(t *testing.T) {
       TF_VERSION: "1.14.8"
       TRIVY_TAG: aquasec/trivy:0.69.3
 `
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ include:
     inputs:
       AWS_CLI_IMAGE_DIGEST: $[[ inputs.AWS_CLI_IMAGE_DIGEST ]]
 `
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ include:
     inputs:
       AWS_CLI_IMAGE_DIGEST: $[[ inputs.AWS_CLI_IMAGE_DIGEST ]]
 `
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -740,7 +740,7 @@ include:
       NODE_VERSION: '24.13.0'
       ALPINE_VERSION: '3.23'
 `
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -820,7 +820,7 @@ func TestCircleCIPinsImages(t *testing.T) {
 	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
 
 	content := "      image: myregistry.example.com/myimage:1.0.0\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -835,7 +835,7 @@ func TestCircleCIPinsImages(t *testing.T) {
 func TestCircleCISkipsWhenPinImagesFalse(t *testing.T) {
 	p := NewCircleCIResolver("")
 	content := "      image: myregistry.example.com/myimage:1.0.0\n"
-	got, err := p.Resolve(content, false, false)
+	got, _, err := p.Resolve(content, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -904,7 +904,7 @@ func TestForgejoResolverPinsActions(t *testing.T) {
 
 	r := NewForgejoResolver(srv.URL, "")
 	content := "      - uses: actions/checkout@v1\n"
-	got, err := r.Resolve(content, true, false)
+	got, _, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -922,7 +922,7 @@ func TestForgejoResolverSkipsAlreadyPinned(t *testing.T) {
 
 	r := NewForgejoResolver(srv.URL, "")
 	content := fmt.Sprintf("      - uses: actions/checkout@%s # v1\n", testFakeSHA)
-	got, err := r.Resolve(content, true, false)
+	got, _, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,7 +967,7 @@ func TestBitbucketPipelinesPinsImages(t *testing.T) {
 	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
 
 	content := "      image: myregistry.example.com/myimage:3.0.0\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +982,7 @@ func TestBitbucketPipelinesPinsImages(t *testing.T) {
 func TestBitbucketPipelinesSkipsWhenPinImagesFalse(t *testing.T) {
 	p := NewBitbucketResolver()
 	content := "      image: myregistry.example.com/myimage:3.0.0\n"
-	got, err := p.Resolve(content, false, false)
+	got, _, err := p.Resolve(content, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1060,7 +1060,7 @@ func TestGitHubResolverPinsActions(t *testing.T) {
 	}
 
 	content := checkoutV4Line
-	got, err := r.Resolve(content, true, false)
+	got, _, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1079,7 +1079,7 @@ func TestGitHubResolverSkipsAlreadyPinned(t *testing.T) {
 	r := NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)})
 	content := fmt.Sprintf("      - uses: actions/checkout@%s # v4\n", testFakeSHA)
 
-	got, err := r.Resolve(content, true, false)
+	got, _, err := r.Resolve(content, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1106,7 +1106,7 @@ func TestGitHubResolverPinImages(t *testing.T) {
 	r.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "        image: myregistry.example.com/myimage:1.2.3\n"
-	got, err := r.Resolve(content, false, true)
+	got, _, err := r.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1153,7 +1153,7 @@ func TestGitLabPinsImageWithDependencyProxyPrefix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := p.Resolve(c.content, false, true)
+			got, _, err := p.Resolve(c.content, false, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1184,7 +1184,7 @@ func TestGitLabPinsImageNameSubkey(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "image:\n  name: myregistry.example.com/myimage:1.0.0\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1212,7 +1212,7 @@ func TestGitLabPinsImageNameSubkeyWithEntrypoint(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "image:\n  name: myregistry.example.com/myimage:2.3.4\n  entrypoint: [\"/bin/sh\", \"-c\"]\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1230,7 +1230,7 @@ func TestGitLabPinsImageNameSubkeyWithEntrypoint(t *testing.T) {
 func TestGitLabSkipsImageNameSubkeyLatest(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "image:\n  name: myregistry.example.com/myimage:latest\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1242,7 +1242,7 @@ func TestGitLabSkipsImageNameSubkeyLatest(t *testing.T) {
 func TestGitLabSkipsImageNameSubkeyAlreadyPinned(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "image:\n  name: myregistry.example.com/myimage@sha256:abc123\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1268,7 +1268,7 @@ func TestGitLabPinsServiceBareItem(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "services:\n  - postgres:15\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1295,7 +1295,7 @@ func TestGitLabPinsServiceNameSubkey(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "services:\n  - name: redis:7\n    alias: cache\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1310,7 +1310,7 @@ func TestGitLabPinsServiceNameSubkey(t *testing.T) {
 func TestGitLabSkipsServiceBareItemLatest(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "services:\n  - postgres:latest\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1322,7 +1322,7 @@ func TestGitLabSkipsServiceBareItemLatest(t *testing.T) {
 func TestGitLabSkipsServiceBareItemAlreadyPinned(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	content := "services:\n  - postgres@sha256:abc123\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1346,7 +1346,7 @@ func TestGitLabPinsMultipleServicesInBlock(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "services:\n  - postgres:15\n  - redis:7\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1370,7 +1370,7 @@ func TestGitLabPinsServiceInJob(t *testing.T) {
 	p.docker.client = &http.Client{Transport: rewriteHost(srv.URL)}
 
 	content := "test:\n  image: golang:1.24\n  services:\n    - postgres:15\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1386,7 +1386,7 @@ func TestGitLabServicesBlockDoesNotLeakIntoNextKey(t *testing.T) {
 	p := NewGitLabResolver(gitlabCom, "", nil)
 	// `script:` follows `services:` — the `- not-an-image:value` line must not be touched.
 	content := "services:\n  - postgres:latest\nscript:\n  - not-an-image:value\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1400,7 +1400,7 @@ func TestGitLabServicesBlockDoesNotLeakIntoNextKey(t *testing.T) {
 func TestDockerResolverSkipsLatest(t *testing.T) {
 	d := newDockerResolver("")
 	content := "image: nginx:latest\n"
-	got := d.resolveImages(content)
+	got := d.resolveImages(content, &[]string{})
 	if got != content {
 		t.Errorf("expected 'latest' to be skipped, got:\n%s", got)
 	}
@@ -1409,7 +1409,7 @@ func TestDockerResolverSkipsLatest(t *testing.T) {
 func TestDockerResolverSkipsDigest(t *testing.T) {
 	d := newDockerResolver("")
 	content := "image: nginx@sha256:abc123\n"
-	got := d.resolveImages(content)
+	got := d.resolveImages(content, &[]string{})
 	if got != content {
 		t.Errorf("expected already-digested image to be skipped, got:\n%s", got)
 	}
@@ -1550,7 +1550,7 @@ func TestWoodpeckerPinsImages(t *testing.T) {
 	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
 
 	content := "      image: myregistry.example.com/myimage:1.5.0\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1565,7 +1565,7 @@ func TestWoodpeckerPinsImages(t *testing.T) {
 func TestWoodpeckerSkipsWhenPinImagesFalse(t *testing.T) {
 	p := NewWoodpeckerResolver()
 	content := "      image: myregistry.example.com/myimage:1.5.0\n"
-	got, err := p.Resolve(content, false, false)
+	got, _, err := p.Resolve(content, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1614,7 +1614,7 @@ func TestDockerfilePinsFrom(t *testing.T) {
 	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
 
 	content := "FROM myregistry.example.com/myimage:1.0.0 AS builder\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1637,7 +1637,7 @@ func TestDockerfilePinsFrom(t *testing.T) {
 func TestDockerfileSkipsFromScratch(t *testing.T) {
 	p := NewDockerfileResolver()
 	content := "FROM scratch\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1649,7 +1649,7 @@ func TestDockerfileSkipsFromScratch(t *testing.T) {
 func TestDockerfileSkipsWhenPinImagesFalse(t *testing.T) {
 	p := NewDockerfileResolver()
 	content := "FROM myregistry.example.com/myimage:1.0.0\n"
-	got, err := p.Resolve(content, false, false)
+	got, _, err := p.Resolve(content, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1700,7 +1700,7 @@ func TestComposePinsImages(t *testing.T) {
 	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
 
 	content := "    image: myregistry.example.com/myimage:2.0.0\n"
-	got, err := p.Resolve(content, false, true)
+	got, _, err := p.Resolve(content, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1715,7 +1715,7 @@ func TestComposePinsImages(t *testing.T) {
 func TestComposeSkipsWhenPinImagesFalse(t *testing.T) {
 	p := NewComposeResolver()
 	content := "    image: myregistry.example.com/myimage:2.0.0\n"
-	got, err := p.Resolve(content, false, false)
+	got, _, err := p.Resolve(content, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

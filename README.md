@@ -435,7 +435,6 @@ The stem is the key name with `_VERSION`, `_TAG`, or `_DIGEST` stripped (prefix 
 | `GRYPE` | `anchore/grype` |
 | `SEMGREP` | `semgrep/semgrep` |
 | `COSIGN` | `cgr.dev/chainguard/cosign` |
-| `ANSIBLE` | `cytopia/ansible` |
 | `PACKER` | `hashicorp/packer` |
 | `VAULT` | `hashicorp/vault` |
 | `GOLANGCI`, `GOLANGCI_LINT` | `golangci/golangci-lint` |

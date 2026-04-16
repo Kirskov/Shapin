@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -49,22 +48,22 @@ func newDockerResolver(registryToken string) *dockerResolver {
 
 // resolveImages replaces `image: name:tag` with `image: name@sha256:xxx # tag`
 // in the given content. Non-fatal: leaves unresolvable images untouched.
-func (d *dockerResolver) resolveImages(content string) string {
+func (d *dockerResolver) resolveImages(content string, warns *[]string) string {
 	d.warnIfDrifted(content)
-	return d.pinImageRefs(dockerImageRegex, content)
+	return d.pinImageRefs(dockerImageRegex, content, warns)
 }
 
 // resolveImageNames replaces `name: name:tag` with `name: name@sha256:xxx # tag`
 // for GitLab CI's extended image syntax (image: {name: ..., entrypoint: ...}).
-func (d *dockerResolver) resolveImageNames(content string) string {
-	return d.pinImageRefs(dockerNameRegex, content)
+func (d *dockerResolver) resolveImageNames(content string, warns *[]string) string {
+	return d.pinImageRefs(dockerNameRegex, content, warns)
 }
 
 // resolveServices pins bare list items in GitLab CI services: blocks,
 // e.g. `  - postgres:15` → `  - postgres@sha256:... # 15`.
 // It only processes lines that appear after a `services:` key and stops at
 // the next top-level key (no leading spaces).
-func (d *dockerResolver) resolveServices(content string) string {
+func (d *dockerResolver) resolveServices(content string, warns *[]string) string {
 	lines := strings.Split(content, "\n")
 	inServices := false
 	for i, line := range lines {
@@ -90,20 +89,20 @@ func (d *dockerResolver) resolveServices(content string) string {
 			if len(parts) < 6 {
 				return match
 			}
-			return d.pinImageParts(match, parts)
+			return d.pinImageParts(match, parts, warns)
 		})
 	}
 	return strings.Join(lines, "\n")
 }
 
 // pinImageRefs pins all image references matched by re in content.
-func (d *dockerResolver) pinImageRefs(re *regexp.Regexp, content string) string {
+func (d *dockerResolver) pinImageRefs(re *regexp.Regexp, content string, warns *[]string) string {
 	return re.ReplaceAllStringFunc(content, func(match string) string {
 		parts := re.FindStringSubmatch(match)
 		if len(parts) < 6 {
 			return match
 		}
-		return d.pinImageParts(match, parts)
+		return d.pinImageParts(match, parts, warns)
 	})
 }
 
@@ -117,7 +116,7 @@ func (d *dockerResolver) warnIfDrifted(content string) {
 	}).checkAll(content)
 }
 
-func (d *dockerResolver) pinImageParts(match string, parts []string) string {
+func (d *dockerResolver) pinImageParts(match string, parts []string, warns *[]string) string {
 	// parts[1]=prefix (e.g. "  image: "), parts[2]=optional proxy var prefix,
 	// parts[3]=image name, parts[4]=tag, parts[5]=closing quote
 	prefix, proxyVar, image, tag, suffix := parts[1], parts[2], parts[3], parts[4], parts[5]
@@ -142,14 +141,14 @@ func (d *dockerResolver) pinImageParts(match string, parts []string) string {
 		return match
 	}
 	if tag == "latest" {
-		fmt.Fprintf(os.Stderr, "  warn: docker image %s:%s: avoid 'latest' — pin to an explicit tag\n", strippedImage, tag)
+		*warns = append(*warns, fmt.Sprintf("docker image %s:%s: avoid 'latest' — pin to an explicit tag", strippedImage, tag))
 		return match
 	}
 	digest, err := d.cache.getOrSet(strippedImage+":"+tag, func() (string, error) {
 		return d.fetchDigest(strippedImage, tag)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warn: docker image %s:%s: %v\n", strippedImage, tag, err)
+		*warns = append(*warns, fmt.Sprintf("docker image %s:%s: %v", strippedImage, tag, err))
 		return match
 	}
 	// Preserve the dependency proxy variable prefix in the output so the

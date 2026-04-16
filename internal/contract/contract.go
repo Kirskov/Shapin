@@ -14,6 +14,7 @@ type Provider interface {
 
 	// Resolve rewrites content, replacing floating tags with immutable SHAs.
 	// pinActions controls action/component pinning; pinImages controls Docker
-	// image pinning. Returns the (possibly unchanged) content and any fatal error.
-	Resolve(content string, pinActions, pinImages bool) (string, error)
+	// image pinning. Returns the (possibly unchanged) content, any non-fatal
+	// warnings, and any fatal error.
+	Resolve(content string, pinActions, pinImages bool) (string, []string, error)
 }

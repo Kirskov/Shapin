@@ -87,7 +87,8 @@ func FuzzDockerResolveImages(f *testing.F) {
 		// Replace the HTTP client with one that always returns a fixed digest
 		// so the fuzzer exercises the parsing/regex paths, not networking.
 		r.client = newFakeDigestClient("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-		r.resolveImages(content)
+		var warns []string
+		r.resolveImages(content, &warns)
 	})
 }
 
@@ -103,6 +104,7 @@ func FuzzDockerfilePinFrom(f *testing.F) {
 	f.Fuzz(func(t *testing.T, content string) {
 		r := NewDockerfileResolver()
 		r.docker.client = newFakeDigestClient("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-		r.pinFrom(content)
+		var warns []string
+		r.pinFrom(content, &warns)
 	})
 }

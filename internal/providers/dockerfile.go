@@ -3,7 +3,6 @@ package providers
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -32,12 +31,13 @@ func (r *dockerfileResolver) IsMatch(relPath string) bool {
 		strings.HasSuffix(base, ".Dockerfile")
 }
 
-func (r *dockerfileResolver) Resolve(content string, _, pinImages bool) (string, error) {
+func (r *dockerfileResolver) Resolve(content string, _, pinImages bool) (string, []string, error) {
 	if !pinImages {
-		return content, nil
+		return content, nil, nil
 	}
 	r.warnIfDrifted(content)
-	return r.pinFrom(content), nil
+	var warns []string
+	return r.pinFrom(content, &warns), warns, nil
 }
 
 func (r *dockerfileResolver) warnIfDrifted(content string) {
@@ -55,7 +55,7 @@ func (r *dockerfileResolver) warnIfDrifted(content string) {
 	}
 }
 
-func (r *dockerfileResolver) pinFrom(content string) string {
+func (r *dockerfileResolver) pinFrom(content string, warns *[]string) string {
 	return dockerfileFromRegex.ReplaceAllStringFunc(content, func(match string) string {
 		parts := dockerfileFromRegex.FindStringSubmatch(match)
 		if len(parts) < 5 {
@@ -70,7 +70,7 @@ func (r *dockerfileResolver) pinFrom(content string) string {
 			return r.docker.fetchDigest(image, tag)
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warn: Dockerfile FROM %s:%s: %v\n", image, tag, err)
+			*warns = append(*warns, fmt.Sprintf("Dockerfile FROM %s:%s: %v", image, tag, err))
 			return match
 		}
 		// trailing is either " " (before AS alias) or "\n" (end of line).
