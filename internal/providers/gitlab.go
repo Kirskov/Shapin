@@ -312,6 +312,52 @@ type specInputEntry struct {
 	hasDescription bool
 }
 
+// findMappingChild returns the value node for the given key in a mapping node, or nil.
+func findMappingChild(node *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// specInputsNode extracts the spec.inputs mapping node from a parsed YAML document root.
+func specInputsNode(root *yaml.Node) *yaml.Node {
+	doc := root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	specNode := findMappingChild(doc, "spec")
+	if specNode == nil || specNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	inputsNode := findMappingChild(specNode, "inputs")
+	if inputsNode == nil || inputsNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	return inputsNode
+}
+
+// parseSpecInputEntry extracts the version and hasDescription fields from a spec input value node.
+func parseSpecInputEntry(valNode *yaml.Node) (version string, hasDescription bool) {
+	for j := 0; j+1 < len(valNode.Content); j += 2 {
+		switch valNode.Content[j].Value {
+		case "default":
+			v := valNode.Content[j+1].Value
+			if v != "" && !strings.HasPrefix(v, "$") && !isSHA(v) && !strings.Contains(v, ":") {
+				version = v
+			}
+		case "description":
+			hasDescription = true
+		}
+	}
+	return
+}
+
 // collectSpecInputEntries parses the YAML and returns entries for spec.inputs keys
 // whose value is a mapping containing a bare, pinnable default: version string.
 // e.g. AWS_CLI_IMAGE_DIGEST: {default: "2.34.28"} → {image: "amazon/aws-cli", version: "2.34.28"}
@@ -320,31 +366,8 @@ func (r *gitlabResolver) collectSpecInputEntries(content string) map[string]spec
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil || root.Kind == 0 {
 		return nil
 	}
-	// Find the spec.inputs mapping node.
-	doc := &root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-	if doc.Kind != yaml.MappingNode {
-		return nil
-	}
-	var inputsNode *yaml.Node
-	for i := 0; i+1 < len(doc.Content); i += 2 {
-		if doc.Content[i].Value == "spec" {
-			specVal := doc.Content[i+1]
-			if specVal.Kind != yaml.MappingNode {
-				break
-			}
-			for j := 0; j+1 < len(specVal.Content); j += 2 {
-				if specVal.Content[j].Value == "inputs" {
-					inputsNode = specVal.Content[j+1]
-					break
-				}
-			}
-			break
-		}
-	}
-	if inputsNode == nil || inputsNode.Kind != yaml.MappingNode {
+	inputsNode := specInputsNode(&root)
+	if inputsNode == nil {
 		return nil
 	}
 	entries := make(map[string]specInputEntry)
@@ -354,30 +377,11 @@ func (r *gitlabResolver) collectSpecInputEntries(content string) map[string]spec
 		if valNode.Kind != yaml.MappingNode {
 			continue
 		}
-		stem := extractStem(k)
-		if stem == "" {
-			continue
-		}
-		image := r.lookupStem(stem)
+		image := r.lookupStem(extractStem(k))
 		if image == "" {
 			continue
 		}
-		// Find the default: key inside the nested mapping.
-		var version string
-		var hasDescription bool
-		for j := 0; j+1 < len(valNode.Content); j += 2 {
-			switch valNode.Content[j].Value {
-			case "default":
-				v := valNode.Content[j+1].Value
-				if v == "" || strings.HasPrefix(v, "$") || isSHA(v) || strings.Contains(v, ":") {
-					version = "" // not pinnable
-				} else {
-					version = v
-				}
-			case "description":
-				hasDescription = true
-			}
-		}
+		version, hasDescription := parseSpecInputEntry(valNode)
 		if version != "" {
 			entries[k] = specInputEntry{image: image, version: version, hasDescription: hasDescription}
 		}
