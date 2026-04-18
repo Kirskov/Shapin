@@ -15,8 +15,9 @@ const (
 	testOwnerRepo       = "owner/repo"
 	testEncodedProject  = "group%2Fproject"
 	testTagV1           = "v1.0.0"
-	testGitRefsTagsPath = "/git/refs/tags/"
-	testExpectFmt       = "expected %q, got %q"
+	testGitRefsTagsPath  = "/git/refs/tags/"
+	testExpectFmt        = "expected %q, got %q"
+	testPinComponentsFmt = "pinComponents: %v"
 )
 
 // ── extractProjectPath ────────────────────────────────────────────────────────
@@ -257,7 +258,7 @@ func TestGitLabPinComponentAlreadyPinned(t *testing.T) {
 	content := "  - component: gitlab.com/group/project/name@abc1234def5678901234567890abcdef12345678 # v1.0.0\n"
 	result, err := r.pinComponents(content)
 	if err != nil {
-		t.Fatalf("pinComponents: %v", err)
+		t.Fatalf(testPinComponentsFmt, err)
 	}
 	if result != content {
 		t.Errorf("already-pinned component should be left unchanged, got:\n%s", result)
@@ -270,7 +271,7 @@ func TestGitLabPinComponentSkipsVariablePrefix(t *testing.T) {
 	content := "  - component: $SPLIT_GLOBAL_COMPONENT_ROOT/group/project/name@v1.0.0\n"
 	result, err := r.pinComponents(content)
 	if err != nil {
-		t.Fatalf("pinComponents: %v", err)
+		t.Fatalf(testPinComponentsFmt, err)
 	}
 	if result != content {
 		t.Errorf("variable-prefixed component should be left unchanged, got:\n%s", result)
@@ -480,5 +481,92 @@ func TestForgejoFetchSHAFallbackToCommit(t *testing.T) {
 	}
 	if sha != testFakeSHA {
 		t.Errorf(testExpectFmt, testFakeSHA, sha)
+	}
+}
+
+// ── retryDelay ────────────────────────────────────────────────────────────────
+
+func TestRetryDelayRetryAfterSeconds(t *testing.T) {
+	resp := &http.Response{Header: http.Header{"Retry-After": []string{"30"}}}
+	d := retryDelay(resp)
+	if d != 30*time.Second {
+		t.Errorf("expected 30s, got %v", d)
+	}
+}
+
+func TestRetryDelayRateLimitReset(t *testing.T) {
+	future := time.Now().Add(2 * time.Minute).Unix()
+	resp := &http.Response{Header: http.Header{"X-Ratelimit-Reset": []string{fmt.Sprintf("%d", future)}}}
+	d := retryDelay(resp)
+	if d < 90*time.Second || d > 150*time.Second {
+		t.Errorf("expected ~2m, got %v", d)
+	}
+}
+
+func TestRetryDelayFallback(t *testing.T) {
+	resp := &http.Response{Header: http.Header{}}
+	d := retryDelay(resp)
+	if d != 60*time.Second {
+		t.Errorf("expected 60s fallback, got %v", d)
+	}
+}
+
+// ── warnIfDrifted (dockerfile) ────────────────────────────────────────────────
+
+func TestDockerfileWarnIfDriftedNoDrift(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "token") {
+			json.NewEncoder(w).Encode(map[string]string{"token": "tok"})
+			return
+		}
+		w.Header().Set("Docker-Content-Digest", "sha256:aabbcc")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r := NewDockerfileResolver()
+	r.docker.client = &http.Client{Transport: rewriteHostTransport{base: srv.URL}}
+	content := "# alpine:3.20\nFROM alpine@sha256:aabbcc\n"
+	_, err := r.Resolve(content, false, true)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+}
+
+// ── pinComponents (gitlab) ────────────────────────────────────────────────────
+
+func TestGitLabPinComponentsAlreadyPinned(t *testing.T) {
+	r := NewGitLabResolver(testGitLabCom, "", nil)
+	content := "  - component: gitlab.com/group/project/comp@abc1234567890123456789012345678901234567890\n"
+	result, err := r.pinComponents(content)
+	if err != nil {
+		t.Fatalf(testPinComponentsFmt, err)
+	}
+	if result != content {
+		t.Errorf("already-pinned component should not change; got %q", result)
+	}
+}
+
+func TestGitLabPinComponentsWithFakeServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/repository/tags/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"commit": map[string]string{"id": testFakeSHA},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	r := NewGitLabResolver(srv.URL, "", nil)
+	r.client = &http.Client{Transport: rewriteHostTransport{base: srv.URL}}
+	content := "  - component: gitlab.com/group/project/comp@v1.0.0\n"
+	result, err := r.pinComponents(content)
+	if err != nil {
+		t.Fatalf(testPinComponentsFmt, err)
+	}
+	if !strings.Contains(result, testFakeSHA) {
+		t.Errorf("expected SHA %q in result, got: %q", testFakeSHA, result)
 	}
 }

@@ -150,6 +150,30 @@ A malicious `.shapin.json` could supply attacker-controlled tokens or exclude fi
 
 Mitigated by cosign-signed release binaries, SLSA provenance attestations, published `checksums.txt`, SHA-pinned CI actions, and a pinned install script.
 
+### Secure design principles (Saltzer & Schroeder)
+
+| Principle | How it is applied |
+|---|---|
+| **Economy of mechanism** | Shapin has a small, focused codebase — read files, call APIs, rewrite files. No plugin system, no scripting engine, no daemon. |
+| **Fail-safe defaults** | `--dry-run` defaults to `true` — no files are modified unless the user explicitly opts in. Missing API responses leave the file unchanged. |
+| **Complete mediation** | Every file path is validated against the project root via `assertWithinRoot` before any read or write. |
+| **Open design** | The tool is fully open source. Security properties do not rely on secrecy of the implementation. |
+| **Separation of privilege** | API tokens are scoped per provider (GitHub, GitLab, Forgejo). No single credential grants access to all providers. |
+| **Least common mechanism** | Providers share no mutable global state. Each provider is an independent struct with its own HTTP client. |
+| **Psychological acceptability** | The CLI has sensible defaults and clear flag names. Safe operation (dry-run) is the default; destructive operation (writing files) requires an explicit opt-in. |
+
+### Common implementation weaknesses
+
+| Weakness (CWE / OWASP) | Mitigation |
+|---|---|
+| **CWE-22 Path traversal** | `assertWithinRoot` validates every path before read/write; covered by gosec and CodeQL. |
+| **CWE-20 Improper input validation** | `--format` validated against an explicit allowlist; host URLs must start with `https://`; file paths validated as above. |
+| **CWE-400 ReDoS** | Go's `regexp` uses a linear-time RE2 engine — catastrophic backtracking is impossible by design. |
+| **CWE-312 Cleartext storage of sensitive data** | Tokens are never written to output, diffs, or SARIF; gosec scans for hardcoded credentials on every commit. |
+| **CWE-295 Improper certificate validation** | Go's `net/http` validates TLS certificates by default; no `InsecureSkipVerify` is used anywhere in the codebase. |
+| **CWE-326 Inadequate encryption strength** | All outbound API calls use HTTPS. Go 1.22+ defaults to TLS 1.2+ with AEAD-only cipher suites. |
+| **OWASP A06 Vulnerable components** | Grype scans the SBOM on every CI run; Critical/High CVEs block the release pipeline. |
+
 ### Out of scope
 
 - Private registry credential storage — users are responsible for secure token handling.

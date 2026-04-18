@@ -93,6 +93,18 @@ func main() {
 	}
 	cfgFile.ApplyTo(&cfg, explicitly)
 
+	if cfg.Format != scanner.FormatText && cfg.Format != scanner.FormatJSON && cfg.Format != scanner.FormatSARIF {
+		fmt.Fprintf(os.Stderr, "error: invalid --format %q: must be text, json, or sarif\n", cfg.Format)
+		os.Exit(1)
+	}
+
+	for _, host := range []string{cfg.GitLabHost, cfg.ForgejoHost} {
+		if host != "" && !strings.HasPrefix(host, "https://") {
+			fmt.Fprintf(os.Stderr, "error: host URL %q must start with https://\n", host)
+			os.Exit(1)
+		}
+	}
+
 	if err := scanner.Run(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
