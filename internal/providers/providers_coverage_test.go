@@ -75,7 +75,8 @@ func TestWarnBranchRefDoesNotPanic(t *testing.T) {
 }
 
 func TestWarnDriftDoesNotPanic(t *testing.T) {
-	warnDrift("tag", "actions/checkout", "v4", "oldsha", "newsha")
+	var warns []string
+	warnDrift("tag", "actions/checkout", "v4", "oldsha", "newsha", &warns)
 }
 
 // ── Ansi / IsTTY ─────────────────────────────────────────────────────────────
@@ -332,7 +333,8 @@ func TestDockerfileWarnIfDriftedNoPanic(t *testing.T) {
 	r := NewDockerfileResolver()
 	// Already-pinned content — warnIfDrifted should not panic even if API fails.
 	content := "FROM golang@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab # golang:1.24\n"
-	r.warnIfDrifted(content)
+	var warns []string
+	r.warnIfDrifted(content, &warns)
 }
 
 // ── github.fetchTagObjectSHA ──────────────────────────────────────────────────
@@ -395,7 +397,8 @@ func TestForgejoFetchTagSHANotFound(t *testing.T) {
 func TestGitLabWarnIfDriftedNoPanic(t *testing.T) {
 	r := NewGitLabResolver(testGitLabCom, "", nil)
 	content := "  - component: gitlab.com/group/project/name@abc1234def5678901234567890abcdef12345678 # v1.0.0\n"
-	r.warnIfDrifted(content)
+	var warns []string
+	r.warnIfDrifted(content, &warns)
 }
 
 // ── gitlab.fetchComponentSHA error path ──────────────────────────────────────
@@ -527,7 +530,7 @@ func TestDockerfileWarnIfDriftedNoDrift(t *testing.T) {
 	r := NewDockerfileResolver()
 	r.docker.client = &http.Client{Transport: rewriteHostTransport{base: srv.URL}}
 	content := "# alpine:3.20\nFROM alpine@sha256:aabbcc\n"
-	_, err := r.Resolve(content, false, true)
+	_, _, err := r.Resolve(content, false, true)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

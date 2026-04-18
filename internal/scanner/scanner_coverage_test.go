@@ -406,7 +406,7 @@ func TestRunAppliesChanges(t *testing.T) {
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 	}
-	fc, err := processFile(ghDir+ciYML, dir, pl, processOpts{
+	fc, _, err := processFile(ghDir+ciYML, dir, pl, processOpts{
 		dryRun:     false,
 		pinActions: true,
 		pinImages:  false,
@@ -436,7 +436,7 @@ func TestRunJSON(t *testing.T) {
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 	}
-	fc, err := processFile(ghDir+ciYML, dir, pl, processOpts{
+	fc, _, err := processFile(ghDir+ciYML, dir, pl, processOpts{
 		dryRun:     true,
 		pinActions: true,
 		pinImages:  false,
@@ -464,7 +464,7 @@ func TestRunSARIF(t *testing.T) {
 	pl := []contract.Provider{
 		providers.NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)}),
 	}
-	fc, err := processFile(ghDir+ciYML, dir, pl, processOpts{
+	fc, _, err := processFile(ghDir+ciYML, dir, pl, processOpts{
 		dryRun:     true,
 		pinActions: true,
 		pinImages:  false,
