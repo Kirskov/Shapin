@@ -3,11 +3,32 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/Kirskov/Shapin.svg)](https://pkg.go.dev/github.com/Kirskov/Shapin)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Kirskov/Shapin)](https://goreportcard.com/report/github.com/Kirskov/Shapin)
 [![OpenSSF Baseline](https://www.bestpractices.dev/projects/12470/baseline)](https://www.bestpractices.dev/projects/12470)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12470/badge)](https://www.bestpractices.dev/projects/12470)
 
 Pin floating tags in CI workflow files to immutable SHAs, making your pipelines reproducible and immune to tag mutation attacks.
 
+## Quick start
+
+```sh
+# Install
+curl -fsSL https://raw.githubusercontent.com/Kirskov/Shapin/df97d9b9fd31e5e9ac80b2257d3eae7d7628509d/install.sh | sh
+
+# Preview what would be pinned (dry run, no files written)
+shapin --path ./myproject
+
+# Apply the changes
+shapin --path ./myproject --dry-run=false
+```
+
+For GitHub Actions, a token is required:
+
+```sh
+shapin --path ./myproject --github-token ghp_xxx --dry-run=false
+```
+
 ## Table of contents
 
+- [Quick start](#quick-start)
 - [What it does](#what-it-does)
 - [Supported files](#supported-files)
 - [Installation](#installation)
@@ -36,6 +57,9 @@ Pin floating tags in CI workflow files to immutable SHAs, making your pipelines 
 - [Dependencies](#dependencies)
 - [Support](#support)
 - [Architecture](ARCHITECTURE.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Governance](MAINTAINERS.md)
 
 ## What it does
 
