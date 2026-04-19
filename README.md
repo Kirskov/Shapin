@@ -121,12 +121,16 @@ To install a specific version, use the [Manual](#manual) method below.
 
 All releases are [immutable](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#immutable-releases) — the Git tag, commit SHA, and release assets are locked and cannot be modified or deleted after publication.
 
-Download the binary for your platform from the [releases page](https://github.com/Kirskov/Shapin/releases), verify the release attestation, and move it to your PATH:
+Download the binary for your platform from the [releases page](https://github.com/Kirskov/Shapin/releases), verify the signature, and move it to your PATH:
 
 ```sh
 # Example for Linux amd64
 curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/shapin-v1.7.0-linux-amd64 -o shapin
-gh attestation verify shapin --repo Kirskov/Shapin
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/shapin-v1.7.0-linux-amd64.sigstore.json -o shapin.sigstore.json
+cosign verify-blob shapin \
+  --bundle shapin.sigstore.json \
+  --certificate-identity "https://github.com/Kirskov/Shapin/.github/workflows/release.yml@refs/tags/v1.7.0" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 chmod +x shapin
 sudo mv shapin /usr/local/bin/
 ```
@@ -176,7 +180,7 @@ Every release asset can be verified using three independent mechanisms:
 
 ```sh
 # Download the binary and checksum file
-curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/shapin-v1.7.0-linux-amd64 -o shapin
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/shapin-v1.7.0-linux-amd64 -o shapin-v1.7.0-linux-amd64
 curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/checksums.txt -o checksums.txt
 
 # Verify (expected output: "shapin-v1.7.0-linux-amd64: OK")
@@ -195,11 +199,15 @@ cosign verify-blob shapin \
 # Expected output: Verified OK
 ```
 
-**3. SLSA provenance attestation** — build provenance is attested via GitHub's attestation framework:
+**3. SLSA provenance attestation** — build provenance is attested via the SLSA L3 generator and included in every release as `multiple.intoto.jsonl`:
 
 ```sh
-gh attestation verify shapin --repo Kirskov/Shapin
-# Expected output: Attestation verification was successful
+curl -fsSL https://github.com/Kirskov/Shapin/releases/download/v1.7.0/multiple.intoto.jsonl -o multiple.intoto.jsonl
+slsa-verifier verify-artifact shapin \
+  --provenance-path multiple.intoto.jsonl \
+  --source-uri github.com/Kirskov/Shapin \
+  --source-tag v1.7.0
+# Expected output: PASSED: SLSA verification passed
 ```
 
 ### Build from source
