@@ -62,10 +62,14 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Run gosec
-        uses: securego/gosec@223e19b8856e00f02cc67804499a83f77e208f3c # v2.25.0
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          args: -fmt sarif -out gosec.sarif ./...
+          go-version-file: go.mod
+
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.25.0
+          gosec -fmt sarif -out gosec.sarif ./...
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
