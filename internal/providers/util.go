@@ -288,7 +288,7 @@ func warnBranchRef(provider, action, ref string) {
 
 // warnDrift appends a drift warning to warns.
 func warnDrift(kind, ref, tag, pinnedSHA, currentSHA string, warns *[]string) {
-	*warns = append(*warns, fmt.Sprintf("%s%sWARNING: %s@%s has drifted — %s was mutated!%s\n  pinned:  %s\n  current: %s\n  → update this ref manually",
+	*warns = append(*warns, fmt.Sprintf("%s%sWARNING: %s@%s has drifted — %s was mutated!%s\n  pinned:  %s\n  current: %s\n  → run shapin --dry-run=false to update",
 		Ansi(AnsiBold), Ansi(AnsiYellow), ref, tag, kind, Ansi(AnsiReset), pinnedSHA, currentSHA))
 }
 
@@ -361,6 +361,24 @@ func (d *driftChecker) checkAll(content string, warns *[]string) {
 			warnDrift(d.kind, ref, tag, pinnedSHA, currentSHA, warns)
 		}
 	}
+}
+
+// fixDrift replaces each drifted pinned SHA in content with the current SHA.
+// It is the caller's responsibility to also call checkAll to emit warnings.
+func (d *driftChecker) fixDrift(content string) string {
+	return replaceMatches(d.pinnedRegex, content, func(parts []string) (string, bool) {
+		ref, pinnedSHA, tag := parts[1], parts[2], parts[3]
+		lookupRef := ref
+		if d.repoPath != nil {
+			lookupRef = d.repoPath(ref)
+		}
+		currentSHA, err := d.resolve(lookupRef, tag)
+		if err != nil || currentSHA == pinnedSHA {
+			return "", false
+		}
+		full := parts[0]
+		return strings.ReplaceAll(full, pinnedSHA, currentSHA), true
+	})
 }
 
 // actionRepoPath extracts "owner/repo" from an action path like "owner/repo/subdir".

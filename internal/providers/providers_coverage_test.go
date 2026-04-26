@@ -327,14 +327,14 @@ func TestProviderNames(t *testing.T) {
 	}
 }
 
-// ── dockerfile.warnIfDrifted ──────────────────────────────────────────────────
+// ── dockerfile.fixAndWarnDrifted ─────────────────────────────────────────────
 
 func TestDockerfileWarnIfDriftedNoPanic(t *testing.T) {
 	r := NewDockerfileResolver()
-	// Already-pinned content — warnIfDrifted should not panic even if API fails.
+	// Already-pinned content — fixAndWarnDrifted should not panic even if API fails.
 	content := "FROM golang@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab # golang:1.24\n"
 	var warns []string
-	r.warnIfDrifted(content, &warns)
+	r.fixAndWarnDrifted(content, &warns)
 }
 
 // ── github.fetchTagObjectSHA ──────────────────────────────────────────────────
@@ -392,13 +392,13 @@ func TestForgejoFetchTagSHANotFound(t *testing.T) {
 	}
 }
 
-// ── gitlab.warnIfDrifted ──────────────────────────────────────────────────────
+// ── gitlab.fixAndWarnDrifted ──────────────────────────────────────────────────
 
 func TestGitLabWarnIfDriftedNoPanic(t *testing.T) {
 	r := NewGitLabResolver(testGitLabCom, "", nil)
 	content := "  - component: gitlab.com/group/project/name@abc1234def5678901234567890abcdef12345678 # v1.0.0\n"
 	var warns []string
-	r.warnIfDrifted(content, &warns)
+	r.fixAndWarnDrifted(content, &warns)
 }
 
 // ── gitlab.fetchComponentSHA error path ──────────────────────────────────────

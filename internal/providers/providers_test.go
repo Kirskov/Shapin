@@ -26,8 +26,9 @@ const (
 	ghWorkflowSkip       = ".github/workflows/skip.yml"
 	ghWorkflowDir        = "/.github/workflows"
 	ciYML                = "/ci.yml"
-	checkoutV4Line       = "      - uses: actions/checkout@v4\n"
-	testFakeSHA          = "aabbccdd11223344556677889900aabbccdd1100"
+	checkoutV4Line          = "      - uses: actions/checkout@v4\n"
+	checkoutV4PinnedFmt     = "      - uses: actions/checkout@%s # v4\n"
+	testFakeSHA             = "aabbccdd11223344556677889900aabbccdd1100"
 	gitlabCom            = "https://gitlab.com"
 	gitlabCIYML          = ".gitlab-ci.yml"
 	manifestsPath        = "/manifests/"
@@ -1077,7 +1078,7 @@ func TestGitHubResolverSkipsAlreadyPinned(t *testing.T) {
 	defer srv.Close()
 
 	r := NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)})
-	content := fmt.Sprintf("      - uses: actions/checkout@%s # v4\n", testFakeSHA)
+	content := fmt.Sprintf(checkoutV4PinnedFmt, testFakeSHA)
 
 	got, _, err := r.Resolve(content, true, false)
 	if err != nil {
@@ -1085,6 +1086,28 @@ func TestGitHubResolverSkipsAlreadyPinned(t *testing.T) {
 	}
 	if got != content {
 		t.Errorf("expected content to be unchanged, got:\n%s", got)
+	}
+}
+
+func TestGitHubResolverFixesDriftedRef(t *testing.T) {
+	// Fake server returns a new SHA — content must be updated to the current SHA.
+	newSHA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	srv := newFakeGitHubServer(map[string]string{"v4": newSHA})
+	defer srv.Close()
+
+	r := NewGitHubResolverWithClient("", &http.Client{Transport: rewriteHost(srv.URL)})
+	content := fmt.Sprintf(checkoutV4PinnedFmt, testFakeSHA)
+
+	got, warns, err := r.Resolve(content, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf(checkoutV4PinnedFmt, newSHA)
+	if got != want {
+		t.Errorf("expected drifted SHA to be updated\n got:  %s want: %s", got, want)
+	}
+	if len(warns) == 0 {
+		t.Error("expected a drift warning, got none")
 	}
 }
 

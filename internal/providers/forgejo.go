@@ -51,20 +51,22 @@ func (r *forgejoResolver) Resolve(content string, pinActions, pinImages bool) (s
 	if !pinActions {
 		return content, warns, nil
 	}
-	r.warnIfDrifted(content, &warns)
+	content = r.fixAndWarnDrifted(content, &warns)
 	result, err := r.pinActions(content)
 	return result, warns, err
 }
 
-// warnIfDrifted checks already-pinned refs and warns if the SHA has changed.
-// The file is never modified — the user must fix it manually.
-func (r *forgejoResolver) warnIfDrifted(content string, warns *[]string) {
-	(&driftChecker{
+// fixAndWarnDrifted updates drifted pinned refs to their current SHA and appends
+// warnings for each one found.
+func (r *forgejoResolver) fixAndWarnDrifted(content string, warns *[]string) string {
+	dc := &driftChecker{
 		pinnedRegex: githubPinnedRegex,
 		kind:        "tag",
 		resolve:     r.fetchSHA,
 		repoPath:    actionRepoPath,
-	}).checkAll(content, warns)
+	}
+	dc.checkAll(content, warns)
+	return dc.fixDrift(content)
 }
 
 func (r *forgejoResolver) pinActions(content string) (string, error) {

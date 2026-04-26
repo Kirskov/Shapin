@@ -36,13 +36,15 @@ func (r *dockerfileResolver) Resolve(content string, _, pinImages bool) (string,
 		return content, nil, nil
 	}
 	var warns []string
-	r.warnIfDrifted(content, &warns)
+	content = r.fixAndWarnDrifted(content, &warns)
 	return r.pinFrom(content, &warns), warns, nil
 }
 
-func (r *dockerfileResolver) warnIfDrifted(content string, warns *[]string) {
-	// patternFromPinned captures (image, tag, sha) — different order from the
-	// generic driftChecker convention — so we handle it inline.
+// fixAndWarnDrifted updates drifted FROM digests to their current SHA and appends
+// warnings for each one found.
+// patternFromPinned captures (image, tag, sha) in a different order from the
+// generic driftChecker convention, so this is handled inline.
+func (r *dockerfileResolver) fixAndWarnDrifted(content string, warns *[]string) string {
 	for _, parts := range dockerfileFromPinned.FindAllStringSubmatch(content, -1) {
 		image, tag, pinnedSHA := parts[1], parts[2], parts[3]
 		currentSHA, err := r.docker.fetchDigest(image, tag)
@@ -51,8 +53,10 @@ func (r *dockerfileResolver) warnIfDrifted(content string, warns *[]string) {
 		}
 		if currentSHA != pinnedSHA {
 			warnDrift("image", image, tag, pinnedSHA, currentSHA, warns)
+			content = strings.ReplaceAll(content, pinnedSHA, currentSHA)
 		}
 	}
+	return content
 }
 
 func (r *dockerfileResolver) pinFrom(content string, warns *[]string) string {

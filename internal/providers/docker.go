@@ -49,7 +49,13 @@ func newDockerResolver(registryToken string) *dockerResolver {
 // resolveImages replaces `image: name:tag` with `image: name@sha256:xxx # tag`
 // in the given content. Non-fatal: leaves unresolvable images untouched.
 func (d *dockerResolver) resolveImages(content string, warns *[]string) string {
-	d.warnIfDrifted(content, warns)
+	dc := &driftChecker{
+		pinnedRegex: dockerPinnedRegex,
+		kind:        "image",
+		resolve:     d.fetchDigest,
+	}
+	dc.checkAll(content, warns)
+	content = dc.fixDrift(content)
 	return d.pinImageRefs(dockerImageRegex, content, warns)
 }
 
@@ -106,15 +112,6 @@ func (d *dockerResolver) pinImageRefs(re *regexp.Regexp, content string, warns *
 	})
 }
 
-// warnIfDrifted checks already-pinned image digests and warns if the tag now
-// resolves to a different digest. The file is never modified.
-func (d *dockerResolver) warnIfDrifted(content string, warns *[]string) {
-	(&driftChecker{
-		pinnedRegex: dockerPinnedRegex,
-		kind:        "image",
-		resolve:     d.fetchDigest,
-	}).checkAll(content, warns)
-}
 
 func (d *dockerResolver) pinImageParts(match string, parts []string, warns *[]string) string {
 	// parts[1]=prefix (e.g. "  image: "), parts[2]=optional proxy var prefix,
