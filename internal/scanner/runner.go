@@ -42,6 +42,7 @@ func Run(cfg Config) error {
 		providers.NewWoodpeckerResolver(),
 		providers.NewDockerfileResolver(),
 		providers.NewComposeResolver(),
+		providers.NewTerraformResolver(),
 	}
 
 	files, err := findWorkflowFiles(cfg.Path, providerList, cfg.Exclude)

@@ -1724,6 +1724,128 @@ func TestComposeSkipsWhenPinImagesFalse(t *testing.T) {
 	}
 }
 
+// ── Terraform .tfvars ────────────────────────────────────────────────────────
+
+const (
+	tfDigest1 = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	tfDigest2 = "sha256:1234560123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+)
+
+func newFakeTerraformRegistry(digest string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, manifestsPath) {
+			w.Header().Set(dockerDigestHeader, digest)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"token": "fake"})
+	}))
+}
+
+func TestTerraformIsMatch(t *testing.T) {
+	p := NewTerraformResolver()
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"terraform.tfvars", true},
+		{"prod.tfvars", true},
+		{"infra/prod.tfvars", true},
+		{"main.tf", false},
+		{"variables.tf", false},
+		{"terraform.tfvars.json", false},
+	}
+	for _, c := range cases {
+		if got := p.IsMatch(c.path); got != c.want {
+			t.Errorf("Terraform IsMatch(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestTerraformPinsImageLiteral(t *testing.T) {
+	srv := newFakeTerraformRegistry(tfDigest1)
+	defer srv.Close()
+
+	p := NewTerraformResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := `app_image = "myregistry.example.com/myapp:1.2.3"` + "\n"
+	got, _, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, tfDigest1) {
+		t.Errorf(wantDigestInOutput, got)
+	}
+	if !strings.Contains(got, "# myregistry.example.com/myapp:1.2.3") {
+		t.Errorf(wantTagAsComment, got)
+	}
+}
+
+func TestTerraformSkipsLatest(t *testing.T) {
+	p := NewTerraformResolver()
+	content := `app_image = "myregistry.example.com/myapp:latest"` + "\n"
+	got, warns, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected 'latest' to be left untouched, got:\n%s", got)
+	}
+	if len(warns) == 0 {
+		t.Error("expected a warning for 'latest', got none")
+	}
+}
+
+func TestTerraformSkipsAlreadyPinned(t *testing.T) {
+	srv := newFakeTerraformRegistry(tfDigest1)
+	defer srv.Close()
+
+	p := NewTerraformResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := fmt.Sprintf(`app_image = "myregistry.example.com/myapp@%s # myregistry.example.com/myapp:1.2.3"`, tfDigest1) + "\n"
+	got, _, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf("expected already-pinned value to be left untouched, got:\n%s", got)
+	}
+}
+
+func TestTerraformFixesDriftedImage(t *testing.T) {
+	srv := newFakeTerraformRegistry(tfDigest2)
+	defer srv.Close()
+
+	p := NewTerraformResolver()
+	p.setClient(&http.Client{Transport: rewriteHost(srv.URL)})
+
+	content := fmt.Sprintf(`app_image = "myregistry.example.com/myapp@%s # myregistry.example.com/myapp:1.2.3"`, tfDigest1) + "\n"
+	got, warns, err := p.Resolve(content, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, tfDigest2) {
+		t.Errorf("expected drifted digest to be updated, got:\n%s", got)
+	}
+	if len(warns) == 0 {
+		t.Error("expected a drift warning, got none")
+	}
+}
+
+func TestTerraformSkipsWhenPinImagesFalse(t *testing.T) {
+	p := NewTerraformResolver()
+	content := `app_image = "myregistry.example.com/myapp:1.2.3"` + "\n"
+	got, _, err := p.Resolve(content, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != content {
+		t.Errorf(wantContentUnchanged, got)
+	}
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func writeFile(t *testing.T, path, content string) {

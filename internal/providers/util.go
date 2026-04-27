@@ -77,7 +77,9 @@ const (
 	patternGLComponent  = `(component:\s+)(\$?[a-zA-Z0-9_.\-/]+)@([^\s#]+)`
 	patternGLPinned     = `component:\s+([a-zA-Z0-9_.\-/]+)@([0-9a-f]{40})\s+#\s+(\S+)`
 	patternGLInputTag     = `(?m)^(\s+[A-Z0-9_]*TAG[A-Z0-9_]*:\s+['"]?)([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(['"]?\s*)$`
-	patternGLMappedVersion = `(?m)^(\s*)([A-Z0-9_]+):\s+(['"]?)([A-Za-z0-9][A-Za-z0-9._\-]*)(['"]?)[^\S\n]*$`
+	patternGLMappedVersion  = `(?m)^(\s*)([A-Z0-9_]+):\s+(['"]?)([A-Za-z0-9][A-Za-z0-9._\-]*)(['"]?)[^\S\n]*$`
+	patternTFVarsImage      = `(?m)^(\s*\w+\s*=\s*")([a-zA-Z0-9_.\-/]+):([a-zA-Z0-9_.\-]+)(")`
+	patternTFVarsPinned     = `(?m)^(\s*\w+\s*=\s*")([a-zA-Z0-9_.\-/]+)@(sha256:[0-9a-f]+)\s*#\s*[a-zA-Z0-9_.\-/]+:([a-zA-Z0-9_.\-]+)(")`
 
 	bearerPrefix = "Bearer "
 	maxRetries   = 3
