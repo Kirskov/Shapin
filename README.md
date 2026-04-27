@@ -53,6 +53,7 @@ shapin --path ./myproject --github-token ghp_xxx --dry-run=false
   - [Woodpecker CI](#woodpecker-ci)
   - [Dockerfile](#dockerfile)
   - [Docker Compose](#docker-compose)
+  - [Terraform](#terraform)
 - [When do you need a token?](#when-do-you-need-a-token)
 - [Rate limiting](#rate-limiting)
 - [What it can't do](#what-it-cant-do)
@@ -98,6 +99,7 @@ The tool scans recursively under `--path`, skipping `node_modules`, `.git`, `ven
   - Any `.yml`/`.yaml` file inside `.woodpecker/` and its subdirectories
 - **Dockerfiles**: `Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `*.Dockerfile` (at any depth) — pins `FROM image:tag` lines
 - **Docker Compose**: `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `compose.yml`, `compose.yaml`
+- **Terraform**: `*.tfvars` at any depth — pins literal Docker image string values
 
 ## Installation
 
@@ -614,6 +616,21 @@ The `$[[ inputs.TF_IMAGE_DIGEST ]]` forwarding references in `include:` componen
 ### Docker Compose
 
 Pins `image:` tags in `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `compose.yml`, and `compose.yaml` files at any depth.
+
+---
+
+### Terraform
+
+Pins literal Docker image string values in `*.tfvars` files at any depth.
+
+```hcl
+app_image = "myregistry.example.com/myapp:1.2.3"
+# → app_image = "myregistry.example.com/myapp@sha256:abc123... # myregistry.example.com/myapp:1.2.3"
+```
+
+**Limitations:**
+- Only literal string values are pinned — variable references (`var.foo`) cannot be resolved without cross-file analysis
+- `.tf` files and `.tfvars.json` files are not scanned
 
 ---
 

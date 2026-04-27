@@ -17,7 +17,8 @@ User
              ├─▶ Provider (Bitbucket)       ─▶ Registry API
              ├─▶ Provider (Woodpecker)      ─▶ Registry API
              ├─▶ Provider (Dockerfile)      ─▶ Registry API
-             └─▶ Provider (Docker Compose)  ─▶ Registry API
+             ├─▶ Provider (Docker Compose)  ─▶ Registry API
+             └─▶ Provider (Terraform)       ─▶ Registry API
 ```
 
 ## Actors
