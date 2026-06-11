@@ -64,6 +64,8 @@ github:
       enabled: true
     workflowMustNotUseDangerousTriggers:
       enabled: true
+    pullRequestTargetMustNotCheckoutHead:
+      enabled: true
     workflowsMustDeclarePermissions:
       enabled: true
     reusableWorkflowsMustNotInheritSecrets:
@@ -74,3 +76,8 @@ github:
       enabled: true
     actionsMustNotCarryKnownCVEs:
       enabled: true
+    pipelineMustNotLeakSecretsInConfig:
+      enabled: false
+    pipelineMustNotExecuteUnverifiedScripts:
+      enabled: true
+      trustedUrls: []
